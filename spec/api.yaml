@@ -1,0 +1,282 @@
+openapi: 3.1.0
+info:
+  title: Open Agent ID Registry API
+  version: 0.1.0
+  description: Registry API for AI Agent identity management
+  license:
+    name: Apache-2.0
+
+servers:
+  - url: https://api.openagentid.org/v1
+
+paths:
+  /agents:
+    post:
+      operationId: registerAgent
+      summary: Register a new agent identity
+      description: |
+        Generates a DID, Ed25519 keypair, and anchors the identity on-chain.
+        The private key is returned ONLY in this response — store it securely.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Agent registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - platformApiKey: []
+
+  /agents/{did}:
+    get:
+      operationId: getAgent
+      summary: Look up an agent by DID
+      description: Returns public key and metadata for the given DID. No authentication required.
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "did:agent:tokli:agt_a1B2c3D4e5"
+      responses:
+        '200':
+          description: Agent found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: revokeAgent
+      summary: Revoke an agent identity
+      description: Marks the agent as revoked. Requires owner authentication.
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - platformApiKey: []
+
+  /agents/{did}/key:
+    put:
+      operationId: rotateKey
+      summary: Rotate agent's public key
+      description: |
+        Generates a new keypair. Old key is revoked, new key is anchored on-chain.
+        New private key is returned ONLY in this response.
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Key rotated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotateKeyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - platformApiKey: []
+
+  /verify:
+    post:
+      operationId: verifySignature
+      summary: Verify an agent's signature (online)
+      description: |
+        Server-side signature verification. Prefer SDK local verification for performance.
+        This endpoint is useful when you don't have the SDK installed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: "my-search-agent"
+        capabilities:
+          type: array
+          items:
+            type: string
+          example: ["search", "summarize"]
+
+    RegisterResponse:
+      type: object
+      properties:
+        did:
+          type: string
+          example: "did:agent:tokli:agt_a1B2c3D4e5"
+        public_key:
+          type: string
+          description: Base64url-encoded Ed25519 public key
+          example: "MCowBQYDK2VwAyEA..."
+        private_key:
+          type: string
+          description: Base64url-encoded Ed25519 private key. Only returned once.
+          example: "MC4CAQAwBQYDK2Vw..."
+        chain_status:
+          type: string
+          enum: [pending, anchored, failed]
+          example: "pending"
+        created_at:
+          type: string
+          format: date-time
+
+    AgentInfo:
+      type: object
+      properties:
+        did:
+          type: string
+          example: "did:agent:tokli:agt_a1B2c3D4e5"
+        name:
+          type: string
+          example: "my-search-agent"
+        public_key:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        chain_status:
+          type: string
+          enum: [pending, anchored, failed]
+        chain_tx_hash:
+          type: string
+          nullable: true
+          example: "0xabc123..."
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RotateKeyResponse:
+      type: object
+      properties:
+        did:
+          type: string
+        public_key:
+          type: string
+          description: New public key
+        private_key:
+          type: string
+          description: New private key. Only returned once.
+        chain_status:
+          type: string
+          enum: [pending, anchored, failed]
+
+    VerifyRequest:
+      type: object
+      required:
+        - did
+        - payload
+        - signature
+      properties:
+        did:
+          type: string
+        payload:
+          type: string
+          description: The canonical payload that was signed
+        signature:
+          type: string
+          description: Base64url-encoded Ed25519 signature
+
+    VerifyResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        did:
+          type: string
+        agent_status:
+          type: string
+          enum: [active, revoked]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Agent not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    platformApiKey:
+      type: apiKey
+      in: header
+      name: X-Platform-Key
+      description: Platform API key for authenticated operations

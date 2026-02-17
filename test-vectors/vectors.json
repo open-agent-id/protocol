@@ -1,0 +1,69 @@
+{
+  "version": "0.1.0",
+  "description": "Test vectors for Open Agent ID implementations. All SDKs MUST pass these tests.",
+
+  "did_validation": {
+    "valid": [
+      "did:agent:tokli:agt_a1B2c3D4e5",
+      "did:agent:openai:agt_X9yZ8wV7u6",
+      "did:agent:langchain:agt_Q3rS4tU5v6",
+      "did:agent:abc:agt_0000000000"
+    ],
+    "invalid": [
+      "did:agent:AB:agt_a1B2c3D4e5",
+      "did:agent:toolongplatformnamehere:agt_a1B2c3D4e5",
+      "did:agent:tokli:a1B2c3D4e5",
+      "did:agent:tokli:agt_short",
+      "did:agent:tokli:agt_a1B2c3D4e5!",
+      "did:other:tokli:agt_a1B2c3D4e5",
+      "did:agent:UPPER:agt_a1B2c3D4e5",
+      ""
+    ]
+  },
+
+  "signing": {
+    "keypair": {
+      "description": "Fixed test keypair for deterministic tests",
+      "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "private_key_base64url": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusMcrnf2DXWpgBgrEKt9VL_tPJZAc6DuFy89qmIyWvAhpo9wdRGg"
+    },
+    "test_cases": [
+      {
+        "description": "Empty payload signature",
+        "payload": "",
+        "signature_hex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+      },
+      {
+        "description": "Simple payload signature",
+        "payload": "POST\nhttps://api.example.com/v1/tasks\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708",
+        "signature_hex": "this_will_be_computed_from_the_actual_keypair"
+      }
+    ]
+  },
+
+  "canonical_payload": {
+    "test_cases": [
+      {
+        "description": "GET request with no body",
+        "method": "GET",
+        "url": "https://api.example.com/v1/agents/did:agent:tokli:agt_a1B2c3D4e5",
+        "body": "",
+        "timestamp": 1708123456,
+        "nonce": "a3f1b2c4d5e6f708",
+        "expected": "GET\nhttps://api.example.com/v1/agents/did:agent:tokli:agt_a1B2c3D4e5\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708"
+      },
+      {
+        "description": "POST request with JSON body",
+        "method": "POST",
+        "url": "https://api.example.com/v1/tasks",
+        "body": "{\"task\":\"search\"}",
+        "timestamp": 1708123456,
+        "nonce": "b4f2c3d5e6a7f809",
+        "body_sha256": "d1bc8d3ba4afc7e109612cb73acbdddac052c93025aa1f82942edabb7deb82a1",
+        "expected": "POST\nhttps://api.example.com/v1/tasks\nd1bc8d3ba4afc7e109612cb73acbdddac052c93025aa1f82942edabb7deb82a1\n1708123456\nb4f2c3d5e6a7f809"
+      }
+    ]
+  }
+}
