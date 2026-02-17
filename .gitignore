@@ -1,0 +1,4 @@
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/foundry.lock
