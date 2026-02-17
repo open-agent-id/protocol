@@ -27,7 +27,7 @@
       "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
-      "private_key_base64url": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusMcrnf2DXWpgBgrEKt9VL_tPJZAc6DuFy89qmIyWvAhpo9wdRGg"
+      "private_key_base64url": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2DXWpgBgrEKt9VL_tPJZAc6DuFy89qmIyWvAhpo9wdRGg"
     },
     "test_cases": [
       {
@@ -38,7 +38,7 @@
       {
         "description": "Simple payload signature",
         "payload": "POST\nhttps://api.example.com/v1/tasks\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708",
-        "signature_hex": "this_will_be_computed_from_the_actual_keypair"
+        "signature_hex": "183c01fd99f54ad7555f1f5e09959ae3f5f6b081344b073bdd4deaa4c5c546eeed30eee663d561ae15cffb6d92a7850bbe5d85cf2f6e7d5dfa8a9524f678a100"
       }
     ]
   },
@@ -61,8 +61,8 @@
         "body": "{\"task\":\"search\"}",
         "timestamp": 1708123456,
         "nonce": "b4f2c3d5e6a7f809",
-        "body_sha256": "d1bc8d3ba4afc7e109612cb73acbdddac052c93025aa1f82942edabb7deb82a1",
-        "expected": "POST\nhttps://api.example.com/v1/tasks\nd1bc8d3ba4afc7e109612cb73acbdddac052c93025aa1f82942edabb7deb82a1\n1708123456\nb4f2c3d5e6a7f809"
+        "body_sha256": "0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af",
+        "expected": "POST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f809"
       }
     ]
   }
