@@ -63,9 +63,9 @@ DEPLOYER_PRIVATE_KEY=0x... forge script script/Deploy.s.sol --rpc-url https://ma
 
 | Language | Package | Repository |
 |----------|---------|------------|
-| Python | `pip install agent-id` | [agent-id-python](https://github.com/openagentid/agent-id-python) |
-| JavaScript | `npm install @openagentid/sdk` | [agent-id-js](https://github.com/openagentid/agent-id-js) |
-| Rust | `cargo add agent-id` | [agent-id-rust](https://github.com/openagentid/agent-id-rust) |
+| Python | `pip install agent-id` | [agent-id-python](https://github.com/open-agent-id/agent-id-python) |
+| JavaScript | `npm install @open-agent-id/sdk` | [agent-id-js](https://github.com/open-agent-id/agent-id-js) |
+| Rust | `cargo add agent-id` | [agent-id-rust](https://github.com/open-agent-id/agent-id-rust) |
 
 ## License
 
