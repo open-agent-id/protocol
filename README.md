@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" width="120" alt="Open Agent ID" />
+</p>
+
 # Open Agent ID — Protocol
 
 The open protocol for verifiable, wallet-native AI Agent identities.

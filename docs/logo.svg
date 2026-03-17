@@ -1,0 +1,15 @@
+<svg viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+  <!-- OpenAgentID Logo — shield centered on circle center (300,300) -->
+  <!-- Circle: center 300,300 r=210 stroke=26 -->
+  <!-- Shield bbox: top=160 bottom=440 → center_y=300 ✓ -->
+  <!-- Shield bbox: left=190 right=410 → center_x=300 ✓ -->
+
+  <!-- Outer O ring — dark navy -->
+  <circle cx="300" cy="300" r="210" fill="none" stroke="#1E3A5F" stroke-width="26"/>
+
+  <!-- Shield — vibrant blue, geometrically centered -->
+  <path d="M300,160 L410,205 L410,320 Q410,410 300,440 Q190,410 190,320 L190,205 Z" fill="#2563EB"/>
+
+  <!-- Letter A — white -->
+  <path d="M300,200 L252,388 L270,388 L280,352 L320,352 L330,388 L348,388 Z M300,244 L286,332 L314,332 Z" fill="#FFFFFF"/>
+</svg>
