@@ -1,8 +1,10 @@
 openapi: 3.1.0
 info:
   title: Open Agent ID Registry API
-  version: 0.1.0
-  description: Registry API for AI Agent identity management
+  version: 0.2.0
+  description: |
+    Registry API for wallet-native AI Agent identity management (V2).
+    Agents are identified by CREATE2-derived addresses: did:oaid:{chain}:{agent_address}
   license:
     name: Apache-2.0
 
@@ -10,13 +12,87 @@ servers:
   - url: https://api.openagentid.org/v1
 
 paths:
+  /auth/challenge:
+    post:
+      operationId: createChallenge
+      summary: Request a wallet auth challenge
+      description: Returns a challenge text for the wallet to sign.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wallet_address]
+              properties:
+                wallet_address:
+                  type: string
+                  example: "0xaabb...cc"
+      responses:
+        '200':
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge_id:
+                    type: string
+                    format: uuid
+                  challenge:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+
+  /auth/wallet:
+    post:
+      operationId: walletAuth
+      summary: Verify wallet signature and get Bearer token
+      description: Verifies EIP-191 signature of challenge, returns 24h Bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, wallet_address, signature]
+              properties:
+                challenge_id:
+                  type: string
+                  format: uuid
+                wallet_address:
+                  type: string
+                signature:
+                  type: string
+                  description: EIP-191 personal_sign hex signature
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Bearer token (oaid_...)
+                  wallet_address:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /agents:
     post:
       operationId: registerAgent
       summary: Register a new agent identity
       description: |
-        Generates a DID, Ed25519 keypair, and anchors the identity on-chain.
-        The private key is returned ONLY in this response — store it securely.
+        Creates a new agent with a deterministic CREATE2 address.
+        DID is available immediately; on-chain anchoring happens asynchronously in batches.
+        Requires wallet auth (Bearer token).
       requestBody:
         required: true
         content:
@@ -25,30 +101,69 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: Agent registered successfully
+          description: Agent registered
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegisterResponse'
+                $ref: '#/components/schemas/AgentInfo'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
       security:
-        - platformApiKey: []
+        - walletAuth: []
+
+    get:
+      operationId: listAgents
+      summary: List agents by owner wallet
+      description: Public endpoint with cursor pagination and rate limiting.
+      parameters:
+        - name: owner
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Owner wallet address (0x...)
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor (last agent_address)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Agent list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentInfo'
+                  next_cursor:
+                    type: string
+                    nullable: true
 
   /agents/{did}:
     get:
       operationId: getAgent
       summary: Look up an agent by DID
-      description: Returns public key and metadata for the given DID. No authentication required.
+      description: Public endpoint. Returns agent info including chain_status.
       parameters:
         - name: did
           in: path
           required: true
           schema:
             type: string
-            example: "did:agent:tokli:agt_a1B2c3D4e5"
+            example: "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e"
       responses:
         '200':
           description: Agent found
@@ -59,19 +174,25 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-    delete:
-      operationId: revokeAgent
-      summary: Revoke an agent identity
-      description: Marks the agent as revoked. Requires owner authentication.
+    patch:
+      operationId: updateAgent
+      summary: Update agent metadata
+      description: Wallet auth or agent signature auth.
       parameters:
         - name: did
           in: path
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentRequest'
       responses:
         '200':
-          description: Agent revoked
+          description: Agent updated
           content:
             application/json:
               schema:
@@ -81,15 +202,72 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
       security:
-        - platformApiKey: []
+        - walletAuth: []
+        - agentSignature: []
+
+    delete:
+      operationId: revokeAgent
+      summary: Revoke an agent identity
+      description: Wallet auth required. Marks agent as revoked.
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Agent revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - walletAuth: []
 
   /agents/{did}/key:
     put:
       operationId: rotateKey
-      summary: Rotate agent's public key
+      summary: Rotate agent's Ed25519 public key
+      description: Wallet auth required. Replaces the agent's public key.
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public_key]
+              properties:
+                public_key:
+                  type: string
+                  description: New Ed25519 public key (base64url, 32 bytes)
+      responses:
+        '200':
+          description: Key rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - walletAuth: []
+
+  /agents/{did}/deploy-wallet:
+    post:
+      operationId: deployWallet
+      summary: Deploy the agent's smart contract wallet
       description: |
-        Generates a new keypair. Old key is revoked, new key is anchored on-chain.
-        New private key is returned ONLY in this response.
+        Triggers lazy deployment of the agent's BeaconProxy wallet via CREATE2.
+        Only needed when the agent requires on-chain economic functionality.
       parameters:
         - name: did
           in: path
@@ -98,25 +276,117 @@ paths:
             type: string
       responses:
         '200':
-          description: Key rotated successfully
+          description: Wallet deployed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RotateKeyResponse'
+                type: object
+                properties:
+                  wallet_deployed:
+                    type: boolean
+                  agent_address:
+                    type: string
+                  tx_hash:
+                    type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
       security:
-        - platformApiKey: []
+        - walletAuth: []
+
+  /messages:
+    post:
+      operationId: sendMessage
+      summary: Send a message to another agent
+      description: |
+        Registry relay mode. Agent signature auth required.
+        Body from must match authenticated agent DID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+      security:
+        - agentSignature: []
+
+    get:
+      operationId: getMessages
+      summary: Get messages for an agent
+      description: Agent signature auth required. Can only read own messages.
+      parameters:
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Recipient DID (must match authenticated agent)
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  next_cursor:
+                    type: string
+                    nullable: true
+      security:
+        - agentSignature: []
+
+  /messages/{id}:
+    delete:
+      operationId: deleteMessage
+      summary: Delete a message
+      description: Agent must be sender or recipient.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Message deleted
+        '403':
+          description: Not sender or recipient
+      security:
+        - agentSignature: []
 
   /verify:
     post:
       operationId: verifySignature
-      summary: Verify an agent's signature (online)
+      summary: Verify an agent's signature
       description: |
-        Server-side signature verification. Prefer SDK local verification for performance.
-        This endpoint is useful when you don't have the SDK installed.
+        Server-side signature verification. Supports both signing domains.
+        No authentication required.
       requestBody:
         required: true
         content:
@@ -137,66 +407,74 @@ components:
   schemas:
     RegisterRequest:
       type: object
-      required:
-        - name
+      required: [public_key]
       properties:
         name:
           type: string
           maxLength: 100
-          example: "my-search-agent"
+        public_key:
+          type: string
+          description: Ed25519 public key (base64url, 32 bytes)
+        platform:
+          type: string
+          description: Optional platform metadata
         capabilities:
           type: array
           items:
             type: string
-          example: ["search", "summarize"]
+        endpoint:
+          type: string
+          description: Agent inbox URL
+        endpoint_type:
+          type: string
+          enum: [http, ws, registry]
 
-    RegisterResponse:
+    UpdateAgentRequest:
       type: object
       properties:
-        did:
+        name:
           type: string
-          example: "did:agent:tokli:agt_a1B2c3D4e5"
-        public_key:
+        endpoint:
           type: string
-          description: Base64url-encoded Ed25519 public key
-          example: "MCowBQYDK2VwAyEA..."
-        private_key:
+        endpoint_type:
           type: string
-          description: Base64url-encoded Ed25519 private key. Only returned once.
-          example: "MC4CAQAwBQYDK2Vw..."
-        chain_status:
+        capabilities:
+          type: array
+          items:
+            type: string
+        platform:
           type: string
-          enum: [pending, anchored, failed]
-          example: "pending"
-        created_at:
-          type: string
-          format: date-time
 
     AgentInfo:
       type: object
       properties:
         did:
           type: string
-          example: "did:agent:tokli:agt_a1B2c3D4e5"
+          example: "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e"
+        agent_address:
+          type: string
+          example: "0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e"
         name:
           type: string
-          example: "my-search-agent"
+        wallet_address:
+          type: string
+          description: Owner wallet
         public_key:
           type: string
+        nonce:
+          type: integer
         capabilities:
           type: array
           items:
             type: string
-        status:
-          type: string
-          enum: [active, revoked]
         chain_status:
           type: string
-          enum: [pending, anchored, failed]
+          enum: [pending, submitted, anchored]
         chain_tx_hash:
           type: string
           nullable: true
-          example: "0xabc123..."
+        wallet_deployed:
+          type: boolean
         created_at:
           type: string
           format: date-time
@@ -204,36 +482,64 @@ components:
           type: string
           format: date-time
 
-    RotateKeyResponse:
+    SendMessageRequest:
+      type: object
+      required: [to, body]
+      properties:
+        to:
+          type: string
+          description: Recipient agent DID
+        msg_type:
+          type: string
+        body:
+          type: object
+          description: Message payload (max 64KB)
+        ref_id:
+          type: string
+          format: uuid
+
+    Message:
       type: object
       properties:
-        did:
+        id:
           type: string
-        public_key:
+          format: uuid
+        from_did:
           type: string
-          description: New public key
-        private_key:
+        to_did:
           type: string
-          description: New private key. Only returned once.
-        chain_status:
+        msg_type:
           type: string
-          enum: [pending, anchored, failed]
+          nullable: true
+        body:
+          type: object
+        ref_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
 
     VerifyRequest:
       type: object
-      required:
-        - did
-        - payload
-        - signature
+      required: [did, domain, payload, signature]
       properties:
         did:
           type: string
+        domain:
+          type: string
+          enum: [oaid-http/v1, oaid-msg/v1]
+          description: Signing domain
         payload:
           type: string
           description: The canonical payload that was signed
         signature:
           type: string
-          description: Base64url-encoded Ed25519 signature
+          description: Base64url-encoded Ed25519 signature (64 bytes)
 
     VerifyResponse:
       type: object
@@ -242,9 +548,10 @@ components:
           type: boolean
         did:
           type: string
-        agent_status:
+        agent_address:
           type: string
-          enum: [active, revoked]
+        chain_status:
+          type: string
 
     Error:
       type: object
@@ -275,8 +582,14 @@ components:
             $ref: '#/components/schemas/Error'
 
   securitySchemes:
-    platformApiKey:
+    walletAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token from POST /v1/auth/wallet (oaid_...)
+    agentSignature:
       type: apiKey
       in: header
-      name: X-Platform-Key
-      description: Platform API key for authenticated operations
+      name: X-Agent-Signature
+      description: |
+        Ed25519 signature with headers:
+        X-Agent-DID, X-Agent-Timestamp, X-Agent-Nonce, X-Agent-Signature

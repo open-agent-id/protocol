@@ -1,58 +1,68 @@
 {
-  "version": "0.1.0",
-  "description": "Test vectors for Open Agent ID implementations. All SDKs MUST pass these tests.",
+  "version": "0.2.0",
+  "description": "Test vectors for Open Agent ID V2 implementations. All SDKs MUST pass these tests.",
 
   "did_validation": {
     "valid": [
-      "did:agent:tokli:agt_a1B2c3D4e5",
-      "did:agent:openai:agt_X9yZ8wV7u6",
-      "did:agent:langchain:agt_Q3rS4tU5v6",
-      "did:agent:abc:agt_0000000000"
+      "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
+      "did:oaid:base:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "did:oaid:base-sepolia:0x1234567890abcdef1234567890abcdef12345678",
+      "did:oaid:base:0x0000000000000000000000000000000000000000"
     ],
     "invalid": [
-      "did:agent:AB:agt_a1B2c3D4e5",
-      "did:agent:toolongplatformnamehere:agt_a1B2c3D4e5",
-      "did:agent:tokli:a1B2c3D4e5",
-      "did:agent:tokli:agt_short",
-      "did:agent:tokli:agt_a1B2c3D4e5!",
-      "did:other:tokli:agt_a1B2c3D4e5",
-      "did:agent:UPPER:agt_a1B2c3D4e5",
+      "did:oaid:base:0x7F4E3D2C1B0A9F8E7D6C5B4A3F2E1D0C9B8A7F6E",
+      "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f",
+      "did:oaid:base:7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
+      "did:oaid:BASE:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
+      "did:oaid::0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
+      "did:agent:tokli:agt_a1B2c3D4e5",
+      "did:oaid:base:0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
       ""
     ]
   },
 
   "signing": {
     "keypair": {
-      "description": "Fixed test keypair for deterministic tests",
+      "description": "Fixed Ed25519 test keypair for deterministic tests",
       "private_key_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
       "private_key_base64url": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2DXWpgBgrEKt9VL_tPJZAc6DuFy89qmIyWvAhpo9wdRGg"
     },
-    "test_cases": [
+    "http_test_cases": [
       {
-        "description": "Empty payload signature",
-        "payload": "",
-        "signature_hex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+        "description": "GET request with no body",
+        "payload": "oaid-http/v1\nGET\nhttps://api.example.com/v1/agents/did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708",
+        "signature_hex": "b47468e43735bf8a973cabadeefa43304076db40dc10f3e0bdebb37b59423d929ce6c7e1d127fb39064faf5d521af2af69bf39baf9b115e1e756a17708864b06",
+        "signature_base64url": "tHRo5Dc1v4qXPKut7vpDMEB220DcEPPgveuze1lCPZKc5sfh0Sf7OQZPr11SGvKvab85uvmxFeHnVqF3CIZLBg"
       },
       {
-        "description": "Simple payload signature",
-        "payload": "POST\nhttps://api.example.com/v1/tasks\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708",
-        "signature_hex": "183c01fd99f54ad7555f1f5e09959ae3f5f6b081344b073bdd4deaa4c5c546eeed30eee663d561ae15cffb6d92a7850bbe5d85cf2f6e7d5dfa8a9524f678a100"
+        "description": "POST request with JSON body",
+        "payload": "oaid-http/v1\nPOST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f809",
+        "signature_hex": "483f8845db77f98c28593c7d4133912fb328438c9f6e3ce9e9ebeb24d169a2bd6b9a00ff888af6d96e554a880e873d00a45dd1608208a6e618ddf367e24bdd04",
+        "signature_base64url": "SD-IRdt3-YwoWTx9QTORL7MoQ4yfbjzp6evrJNFpor1rmgD_iIr22W5VSogOhz0ApF3RYIIIpuYY3fNn4kvdBA"
+      }
+    ],
+    "message_test_cases": [
+      {
+        "description": "Chat message between two agents",
+        "payload": "oaid-msg/v1\nchat\n0192d4e5-6f78-7a9b-bcde-f01234567890\ndid:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e\ndid:oaid:base:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n1708123456\n1708127056\n20b2dda940d741d9780897200aaef2ef356ab32b38c7de0d94306fb5a66b4a8e",
+        "signature_hex": "6411191c56d710da15c3b8aa73fe7ef15563d090ed304598d2a599666adad345836d7e8cde44ae5278ea65dab906582c18187b2a2b5e68e66be413f73188030e",
+        "signature_base64url": "ZBEZHFbXENoVw7iqc_5-8VVj0JDtMEWY0qWZZmra00WDbX6M3kSuUnjqZdq5BlgsGBh7KiteaOZr5BP3MYgDDg"
       }
     ]
   },
 
-  "canonical_payload": {
+  "canonical_http_payload": {
     "test_cases": [
       {
         "description": "GET request with no body",
         "method": "GET",
-        "url": "https://api.example.com/v1/agents/did:agent:tokli:agt_a1B2c3D4e5",
+        "url": "https://api.example.com/v1/agents/did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
         "body": "",
         "timestamp": 1708123456,
         "nonce": "a3f1b2c4d5e6f708",
-        "expected": "GET\nhttps://api.example.com/v1/agents/did:agent:tokli:agt_a1B2c3D4e5\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708"
+        "expected": "oaid-http/v1\nGET\nhttps://api.example.com/v1/agents/did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\na3f1b2c4d5e6f708"
       },
       {
         "description": "POST request with JSON body",
@@ -62,7 +72,35 @@
         "timestamp": 1708123456,
         "nonce": "b4f2c3d5e6a7f809",
         "body_sha256": "0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af",
-        "expected": "POST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f809"
+        "expected": "oaid-http/v1\nPOST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f809"
+      },
+      {
+        "description": "GET request with query params sorted",
+        "method": "GET",
+        "url": "https://api.example.com/v1/search?z=last&a=first",
+        "canonical_url": "https://api.example.com/v1/search?a=first&z=last",
+        "body": "",
+        "timestamp": 1708123456,
+        "nonce": "c5d6e7f8a9b0c1d2",
+        "expected": "oaid-http/v1\nGET\nhttps://api.example.com/v1/search?a=first&z=last\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1708123456\nc5d6e7f8a9b0c1d2"
+      }
+    ]
+  },
+
+  "canonical_message_payload": {
+    "test_cases": [
+      {
+        "description": "Chat message with single recipient",
+        "type": "chat",
+        "id": "0192d4e5-6f78-7a9b-bcde-f01234567890",
+        "from": "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
+        "to": ["did:oaid:base:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "ref": "",
+        "timestamp": 1708123456,
+        "expires_at": 1708127056,
+        "body": "{\"content\":\"hello\"}",
+        "body_sha256": "20b2dda940d741d9780897200aaef2ef356ab32b38c7de0d94306fb5a66b4a8e",
+        "expected": "oaid-msg/v1\nchat\n0192d4e5-6f78-7a9b-bcde-f01234567890\ndid:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e\ndid:oaid:base:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n1708123456\n1708127056\n20b2dda940d741d9780897200aaef2ef356ab32b38c7de0d94306fb5a66b4a8e"
       }
     ]
   }

@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-/// @title AgentRegistry - On-chain registry for AI Agent identities
-/// @notice Stores DID hash → public key hash mappings for verifiable agent identities
-/// @dev Minimal contract: register, revoke, rotate key, query
+import {IAgentWalletFactory} from "./interfaces/IAgentWalletFactory.sol";
+
+/// @title AgentRegistry V2 — Wallet-native on-chain registry for AI Agent identities
+/// @notice Stores agent address → record mappings. Agent addresses are deterministically
+///         derived via CREATE2 (factory.computeAddress). Registry server batches registrations
+///         to save gas (30-50% vs single-tx).
+/// @dev Key changes from V1:
+///      - Keyed by agent address (CREATE2-derived), not DID hash
+///      - Relayer model: registry server submits on behalf of users
+///      - Batch registration for gas efficiency
+///      - Factory integration for address verification
 contract AgentRegistry {
     enum Status {
         None,
@@ -12,59 +20,88 @@ contract AgentRegistry {
     }
 
     struct AgentRecord {
-        bytes32 pubKeyHash;
-        address owner;
-        bytes32 platform;
+        bytes32 pubKeyHash; // keccak256(Ed25519 public key bytes)
+        address owner; // owner wallet (EOA)
         Status status;
         uint64 registeredAt;
         uint64 updatedAt;
     }
 
-    /// @notice DID hash → agent record
-    mapping(bytes32 => AgentRecord) public agents;
+    /// @notice The factory used to verify CREATE2 addresses.
+    IAgentWalletFactory public immutable factory;
 
-    /// @notice Total number of registered agents
+    /// @notice The relayer address (registry server's hot wallet).
+    address public relayer;
+
+    /// @notice Admin that can update the relayer. Set to deployer initially.
+    address public admin;
+
+    /// @notice Agent address → on-chain record.
+    mapping(address => AgentRecord) public agents;
+
+    /// @notice Total registered agents (including revoked).
     uint256 public agentCount;
 
-    // Events
+    // ── Events ────────────────────────────────────────────────────────
     event AgentRegistered(
-        bytes32 indexed didHash,
-        bytes32 indexed pubKeyHash,
-        bytes32 indexed platform,
-        address owner
+        address indexed agentAddr, bytes32 indexed pubKeyHash, address indexed owner
     );
-
-    event AgentRevoked(bytes32 indexed didHash);
-
+    event AgentSkipped(address indexed agentAddr, address indexed owner, uint256 nonce);
+    event AgentRevoked(address indexed agentAddr);
     event KeyRotated(
-        bytes32 indexed didHash,
-        bytes32 indexed oldPubKeyHash,
-        bytes32 indexed newPubKeyHash
+        address indexed agentAddr, bytes32 indexed oldPubKeyHash, bytes32 indexed newPubKeyHash
     );
+    event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
+    event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
 
-    // Errors
+    // ── Errors ────────────────────────────────────────────────────────
     error AgentAlreadyExists();
     error AgentNotFound();
     error AgentNotActive();
     error NotOwner();
+    error NotRelayer();
+    error NotAdmin();
     error InvalidHash();
+    error LengthMismatch();
+    error ZeroAddress();
 
-    /// @notice Register a new agent identity
-    /// @param didHash keccak256 hash of the full DID string
-    /// @param pubKeyHash keccak256 hash of the Ed25519 public key bytes
-    /// @param platform keccak256 hash of the platform name (e.g., "tokli")
-    function register(
-        bytes32 didHash,
-        bytes32 pubKeyHash,
-        bytes32 platform
-    ) external {
-        if (didHash == bytes32(0) || pubKeyHash == bytes32(0)) revert InvalidHash();
-        if (agents[didHash].status != Status.None) revert AgentAlreadyExists();
+    // ── Modifiers ─────────────────────────────────────────────────────
+    modifier onlyRelayer() {
+        if (msg.sender != relayer) revert NotRelayer();
+        _;
+    }
 
-        agents[didHash] = AgentRecord({
+    modifier onlyAdmin() {
+        if (msg.sender != admin) revert NotAdmin();
+        _;
+    }
+
+    // ── Constructor ───────────────────────────────────────────────────
+
+    /// @param _factory The AgentWalletFactory address (for computeAddress verification)
+    /// @param _relayer The initial relayer (registry server's hot wallet)
+    constructor(address _factory, address _relayer) {
+        factory = IAgentWalletFactory(_factory);
+        relayer = _relayer;
+        admin = msg.sender;
+    }
+
+    // ── Registration (Relayer only) ───────────────────────────────────
+
+    /// @notice Register a single agent. Contract computes the address via factory — no trust
+    ///         in externally supplied addresses.
+    /// @param pubKeyHash keccak256 of the Ed25519 public key
+    /// @param owner The owner wallet
+    /// @param nonce The agent nonce (from wallet_nonces table)
+    function register(bytes32 pubKeyHash, address owner, uint256 nonce) external onlyRelayer {
+        if (pubKeyHash == bytes32(0)) revert InvalidHash();
+
+        address agentAddr = factory.computeAddress(owner, nonce);
+        if (agents[agentAddr].status != Status.None) revert AgentAlreadyExists();
+
+        agents[agentAddr] = AgentRecord({
             pubKeyHash: pubKeyHash,
-            owner: msg.sender,
-            platform: platform,
+            owner: owner,
             status: Status.Active,
             registeredAt: uint64(block.timestamp),
             updatedAt: uint64(block.timestamp)
@@ -74,13 +111,54 @@ contract AgentRegistry {
             agentCount++;
         }
 
-        emit AgentRegistered(didHash, pubKeyHash, platform, msg.sender);
+        emit AgentRegistered(agentAddr, pubKeyHash, owner);
     }
 
-    /// @notice Revoke an agent identity
-    /// @param didHash keccak256 hash of the DID to revoke
-    function revoke(bytes32 didHash) external {
-        AgentRecord storage agent = agents[didHash];
+    /// @notice Batch register agents. Skips duplicates instead of reverting (idempotent).
+    ///         Saves 30-50% gas vs individual register() calls.
+    /// @param pubKeyHashes Array of keccak256(Ed25519 public key)
+    /// @param owners Array of owner wallets
+    /// @param nonces Array of agent nonces
+    function registerBatch(
+        bytes32[] calldata pubKeyHashes,
+        address[] calldata owners,
+        uint256[] calldata nonces
+    ) external onlyRelayer {
+        uint256 len = pubKeyHashes.length;
+        if (len != owners.length || len != nonces.length) revert LengthMismatch();
+
+        for (uint256 i = 0; i < len; i++) {
+            if (pubKeyHashes[i] == bytes32(0)) continue; // skip invalid
+
+            address agentAddr = factory.computeAddress(owners[i], nonces[i]);
+
+            if (agents[agentAddr].status != Status.None) {
+                emit AgentSkipped(agentAddr, owners[i], nonces[i]);
+                continue;
+            }
+
+            agents[agentAddr] = AgentRecord({
+                pubKeyHash: pubKeyHashes[i],
+                owner: owners[i],
+                status: Status.Active,
+                registeredAt: uint64(block.timestamp),
+                updatedAt: uint64(block.timestamp)
+            });
+
+            unchecked {
+                agentCount++;
+            }
+
+            emit AgentRegistered(agentAddr, pubKeyHashes[i], owners[i]);
+        }
+    }
+
+    // ── Owner Operations ──────────────────────────────────────────────
+
+    /// @notice Revoke an agent. Only the owner can call.
+    /// @param agentAddr The agent's CREATE2 address
+    function revoke(address agentAddr) external {
+        AgentRecord storage agent = agents[agentAddr];
         if (agent.status == Status.None) revert AgentNotFound();
         if (agent.status == Status.Revoked) revert AgentNotActive();
         if (agent.owner != msg.sender) revert NotOwner();
@@ -88,16 +166,16 @@ contract AgentRegistry {
         agent.status = Status.Revoked;
         agent.updatedAt = uint64(block.timestamp);
 
-        emit AgentRevoked(didHash);
+        emit AgentRevoked(agentAddr);
     }
 
-    /// @notice Rotate an agent's public key
-    /// @param didHash keccak256 hash of the DID
-    /// @param newPubKeyHash keccak256 hash of the new public key
-    function rotateKey(bytes32 didHash, bytes32 newPubKeyHash) external {
+    /// @notice Rotate an agent's Ed25519 public key. Only the owner can call.
+    /// @param agentAddr The agent's CREATE2 address
+    /// @param newPubKeyHash keccak256 of the new Ed25519 public key
+    function rotateKey(address agentAddr, bytes32 newPubKeyHash) external {
         if (newPubKeyHash == bytes32(0)) revert InvalidHash();
 
-        AgentRecord storage agent = agents[didHash];
+        AgentRecord storage agent = agents[agentAddr];
         if (agent.status == Status.None) revert AgentNotFound();
         if (agent.status == Status.Revoked) revert AgentNotActive();
         if (agent.owner != msg.sender) revert NotOwner();
@@ -106,22 +184,38 @@ contract AgentRegistry {
         agent.pubKeyHash = newPubKeyHash;
         agent.updatedAt = uint64(block.timestamp);
 
-        emit KeyRotated(didHash, oldPubKeyHash, newPubKeyHash);
+        emit KeyRotated(agentAddr, oldPubKeyHash, newPubKeyHash);
     }
 
-    /// @notice Get agent record by DID hash
-    /// @param didHash keccak256 hash of the DID
-    /// @return record The agent record
-    function getAgent(bytes32 didHash) external view returns (AgentRecord memory record) {
-        record = agents[didHash];
-        if (record.status == Status.None) revert AgentNotFound();
-        return record;
+    // ── Queries ───────────────────────────────────────────────────────
+
+    /// @notice Get agent record. Reverts if not found.
+    function getAgent(address agentAddr) external view returns (AgentRecord memory) {
+        AgentRecord memory agent = agents[agentAddr];
+        if (agent.status == Status.None) revert AgentNotFound();
+        return agent;
     }
 
-    /// @notice Check if an agent exists and is active
-    /// @param didHash keccak256 hash of the DID
-    /// @return True if agent is active
-    function isActive(bytes32 didHash) external view returns (bool) {
-        return agents[didHash].status == Status.Active;
+    /// @notice Check if an agent is active.
+    function isActive(address agentAddr) external view returns (bool) {
+        return agents[agentAddr].status == Status.Active;
+    }
+
+    // ── Admin ─────────────────────────────────────────────────────────
+
+    /// @notice Update the relayer address.
+    function setRelayer(address newRelayer) external onlyAdmin {
+        if (newRelayer == address(0)) revert ZeroAddress();
+        address old = relayer;
+        relayer = newRelayer;
+        emit RelayerUpdated(old, newRelayer);
+    }
+
+    /// @notice Transfer admin role.
+    function transferAdmin(address newAdmin) external onlyAdmin {
+        if (newAdmin == address(0)) revert ZeroAddress();
+        address old = admin;
+        admin = newAdmin;
+        emit AdminTransferred(old, newAdmin);
     }
 }

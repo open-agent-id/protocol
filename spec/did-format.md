@@ -1,43 +1,54 @@
 # Open Agent ID — DID Format Specification
 
-Version: 0.1.0
+Version: 0.2.0 (V2)
 
 ## DID Syntax
 
 ```
-did:agent:{platform}:{unique_id}
+did:oaid:{chain}:{agent_address}
 ```
 
 ### Components
 
 | Component | Format | Example |
 |-----------|--------|---------|
-| Method | `agent` (fixed) | `agent` |
-| Platform | 3-20 lowercase alphanumeric | `tokli` |
-| Unique ID | `agt_` + 10 base62 chars | `agt_a1B2c3D4e5` |
+| Method | `oaid` (fixed) | `oaid` |
+| Chain | Lowercase chain identifier | `base`, `base-sepolia` |
+| Agent Address | `0x` + 40 lowercase hex chars | `0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e` |
 
-### Base62 Character Set
+### Chain Identifiers
 
-```
-0-9 A-Z a-z
-```
+| Chain | Identifier |
+|-------|------------|
+| Base (mainnet) | `base` |
+| Base Sepolia (testnet) | `base-sepolia` |
 
-10 base62 characters = 62^10 ≈ 8.4 × 10^17 possible IDs.
+Chain identifiers are lowercase, using hyphens to separate words.
+
+### Address Format
+
+- Prefixed with `0x`
+- 40 hexadecimal characters (20 bytes)
+- All lowercase (no EIP-55 mixed-case checksum)
 
 ### Examples
 
 ```
-did:agent:tokli:agt_a1B2c3D4e5
-did:agent:openai:agt_X9yZ8wV7u6
-did:agent:langchain:agt_Q3rS4tU5v6
+did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e
+did:oaid:base:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+did:oaid:base-sepolia:0x1234567890abcdef1234567890abcdef12345678
 ```
 
 ### Validation Rules
 
-1. Method MUST be `agent`
-2. Platform MUST be 3-20 characters, lowercase `[a-z0-9]`
-3. Unique ID MUST start with `agt_` followed by exactly 10 base62 characters `[0-9A-Za-z]`
-4. Total DID length MUST NOT exceed 60 characters
+1. Method MUST be `oaid`
+2. Chain MUST be a lowercase alphanumeric string with optional hyphens, 1-20 characters `[a-z0-9-]`
+3. Agent address MUST be `0x` followed by exactly 40 lowercase hex characters `[0-9a-f]`
+4. Total DID length MUST NOT exceed 80 characters
+
+### Platform as Metadata
+
+In V1, `platform` was part of the DID (`did:agent:{platform}:{id}`). In V2, the agent's wallet address is the identity. Platform is optional metadata stored off-chain (e.g., in the registry) and is NOT part of the DID string.
 
 ### DID Document
 
@@ -46,24 +57,23 @@ A minimal DID Document for an Open Agent ID:
 ```json
 {
   "@context": "https://www.w3.org/ns/did/v1",
-  "id": "did:agent:tokli:agt_a1B2c3D4e5",
+  "id": "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
   "verificationMethod": [{
-    "id": "did:agent:tokli:agt_a1B2c3D4e5#key-1",
+    "id": "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e#key-1",
     "type": "Ed25519VerificationKey2020",
-    "controller": "did:agent:tokli:agt_a1B2c3D4e5",
+    "controller": "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e",
     "publicKeyMultibase": "z6Mkf5rGMoatrSj1f4CyvuHBeXJELe9RPdzo2PKGNCKVtZxP"
   }],
   "authentication": [
-    "did:agent:tokli:agt_a1B2c3D4e5#key-1"
+    "did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e#key-1"
   ]
 }
 ```
 
 ## On-Chain Representation
 
-On-chain, only hashes are stored to minimize gas costs:
+On-chain, the agent address is the primary key. No hashing is needed — the address itself is used directly for lookups and ownership verification.
 
 ```
-didHash    = keccak256(did_string)        // 32 bytes
-pubKeyHash = keccak256(public_key_bytes)  // 32 bytes
+agentAddress = 0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e  // 20 bytes
 ```

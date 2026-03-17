@@ -1,68 +1,128 @@
 # Open Agent ID — Signing Specification
 
-Version: 0.1.0
+Version: 0.2.0 (V2)
 
 ## Key Algorithm
 
 - **Algorithm**: Ed25519
 - **Key size**: 256-bit (32 bytes)
 - **Signature size**: 64 bytes
-- **Encoding**: Base64 URL-safe, no padding
+- **Signature encoding**: Base64url, no padding
 
-## Request Signing
+## Signing Domains
+
+V2 uses domain-separated signing to prevent cross-context replay attacks.
+
+| Domain | Prefix | Purpose |
+|--------|--------|---------|
+| HTTP | `oaid-http/v1` | Signing HTTP requests |
+| Message | `oaid-msg/v1` | Signing agent-to-agent messages |
+
+## HTTP Signing
 
 ### Canonical Payload Format
 
-To sign a request, construct a canonical string:
-
 ```
-{method}\n{url}\n{body_hash}\n{timestamp}\n{nonce}
+oaid-http/v1\n{METHOD}\n{CANONICAL_URL}\n{BODY_HASH}\n{TIMESTAMP}\n{NONCE}
 ```
 
 | Field | Description |
 |-------|-------------|
-| `method` | HTTP method, uppercase (GET, POST, etc.) |
-| `url` | Full request URL including query params |
-| `body_hash` | SHA-256 hex digest of request body (empty string → hash of empty string) |
-| `timestamp` | Unix timestamp in seconds |
-| `nonce` | Random 16-byte hex string |
+| Domain | `oaid-http/v1` (fixed) |
+| `METHOD` | HTTP method, uppercase (`GET`, `POST`, etc.) |
+| `CANONICAL_URL` | Canonical URL (see rules below) |
+| `BODY_HASH` | SHA-256 hex digest of request body, lowercase, 64 chars |
+| `TIMESTAMP` | Unix timestamp in seconds |
+| `NONCE` | 16 bytes, hex-encoded (32 chars) |
+
+### Canonical URL Rules
+
+1. Format: `scheme + "://" + host + path + query`
+2. Host MUST be lowercase
+3. Query parameters MUST be sorted lexicographically by key
+4. If there are no query parameters, omit the `?` entirely
+5. Fragment (`#...`) MUST be stripped
 
 ### Example
 
 ```
-POST\nhttps://api.example.com/v1/tasks\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\n1708123456\na3f1b2c4d5e6f7089012
+oaid-http/v1\nPOST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f809
 ```
 
-### Signature
-
-```
-signature = Ed25519.sign(canonical_payload, private_key)
-```
-
-Encoded as Base64 URL-safe, no padding.
-
-## HTTP Headers
+### HTTP Headers
 
 Signed requests MUST include these headers:
 
 ```
-X-Agent-DID: did:agent:tokli:agt_a1B2c3D4e5
+X-Agent-DID: did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e
 X-Agent-Timestamp: 1708123456
-X-Agent-Nonce: a3f1b2c4d5e6f7089012
+X-Agent-Nonce: b4f2c3d5e6a7f809
 X-Agent-Signature: <base64url_signature>
 ```
 
-## Verification
+### HTTP Verification
 
 1. Extract DID from `X-Agent-DID` header
-2. Resolve public key (cache → API → on-chain)
+2. Resolve public key (cache, registry, or on-chain)
 3. Reconstruct canonical payload from request
 4. Verify Ed25519 signature against public key
-5. Check timestamp is within ±300 seconds (5 min) of current time
-6. Check nonce has not been seen before (optional, for replay protection)
+5. Check timestamp is within +-300 seconds (5 min) of current time
+6. Check nonce has not been seen before (replay protection)
+
+### Replay Protection
+
+- Verifiers MUST reject requests outside the +-300s timestamp window
+- Verifiers MUST maintain a nonce dedup cache with TTL >= 600s (window x 2)
+- A request is rejected if the (DID, nonce) pair has been seen within the TTL
+
+## Message Signing
+
+### Canonical Payload Format
+
+```
+oaid-msg/v1\n{TYPE}\n{ID}\n{FROM}\n{SORTED_TO}\n{REF}\n{TIMESTAMP}\n{EXPIRES_AT}\n{BODY_HASH}
+```
+
+| Field | Description |
+|-------|-------------|
+| Domain | `oaid-msg/v1` (fixed) |
+| `TYPE` | Message type (e.g., `chat`, `task`, `event`) |
+| `ID` | UUID v7 of the message |
+| `FROM` | Sender DID |
+| `SORTED_TO` | Comma-separated recipient DIDs, sorted lexicographically |
+| `REF` | Reference message ID (empty string if none) |
+| `TIMESTAMP` | Unix timestamp in seconds |
+| `EXPIRES_AT` | Expiry Unix timestamp in seconds |
+| `BODY_HASH` | SHA-256 hex digest of message body, lowercase, 64 chars |
+
+### Example
+
+```
+oaid-msg/v1\nchat\n0192d4e5-6f78-7a9b-bcde-f01234567890\ndid:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e\ndid:oaid:base:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n1708123456\n1708127056\n20b2dda940d741d9780897200aaef2ef356ab32b38c7de0d94306fb5a66b4a8e
+```
+
+### Message Replay Protection
+
+- Messages use UUID v7 as a unique identifier (no separate nonce needed)
+- Verifiers MUST maintain an ID dedup cache with TTL >= 600s
+- A message is rejected if the same ID has been seen within the TTL
+
+## Canonical JSON
+
+When computing `BODY_HASH` over JSON payloads, the canonical form is:
+
+1. Keys sorted lexicographically (recursive)
+2. No whitespace (no spaces, no newlines)
+3. UTF-8 encoded
+4. Numbers use shortest representation (`1` not `1.0`, `1.5` not `1.50`)
+
+## Body Hash
+
+- `BODY_HASH` = lowercase hex SHA-256 (always 64 characters)
+- Empty body: `BODY_HASH` = `SHA256("")` = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
 
 ## Key Encoding
 
-- **Public key**: Base64 URL-safe, no padding (44 characters)
-- **Private key**: Base64 URL-safe, no padding (88 characters, includes public key)
+- **Public key**: Base64url, no padding (44 characters)
+- **Private key**: Base64url, no padding (88 characters, includes public key)
 - **Multibase** (for DID Document): `z` prefix + Base58btc encoded

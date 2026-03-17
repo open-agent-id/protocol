@@ -1,48 +1,66 @@
 # Open Agent ID — Protocol
 
-The open protocol for verifiable AI Agent identities.
+The open protocol for verifiable, wallet-native AI Agent identities.
 
-Every AI agent gets a unique, chain-anchored, cryptographically verifiable identity (DID) that works across platforms.
+Every AI agent gets a unique, chain-anchored, cryptographically verifiable identity (DID) owned by the user's Ethereum wallet.
+
+## DID Format (V2)
+
+```
+did:oaid:{chain}:{agent_address}
+did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e
+```
+
+- **Method:** `oaid` (fixed)
+- **Chain:** lowercase chain identifier (`base`, `base-sepolia`)
+- **Address:** CREATE2-derived agent wallet address, `0x` + 40 hex, all lowercase
+
+See [spec/did-format.md](spec/did-format.md) for full specification.
 
 ## Repository Structure
 
 ```
 protocol/
 ├── spec/                    # Protocol specifications
-│   ├── did-format.md        # DID syntax and validation rules
-│   ├── signing.md           # Request signing specification
-│   └── api.yaml             # OpenAPI 3.1 — Registry API
+│   ├── did-format.md        # DID V2 syntax and validation
+│   ├── signing.md           # Dual-domain signing (oaid-http/v1, oaid-msg/v1)
+│   └── api.yaml             # OpenAPI 3.1 — Registry API V2
 ├── contracts/               # Solidity smart contracts (Base L2)
 │   ├── src/
-│   │   └── AgentRegistry.sol
-│   ├── test/
-│   │   └── AgentRegistry.t.sol
+│   │   ├── AgentRegistry.sol       # On-chain registry (batch + relayer)
+│   │   ├── AgentWalletFactory.sol  # CREATE2 wallet factory
+│   │   ├── AgentWallet.sol         # Minimal agent wallet (BeaconProxy)
+│   │   └── interfaces/
+│   │       └── IAgentWalletFactory.sol
+│   ├── test/                # Foundry tests (52 tests)
 │   └── script/
-│       └── Deploy.s.sol
-└── test-vectors/            # Shared test vectors for all SDKs
-    └── vectors.json
+│       └── Deploy.s.sol     # Full deployment script
+├── test-vectors/            # Shared test vectors for all SDKs
+│   └── vectors.json
+└── docs/
+    └── mainnet-deployment.md
 ```
 
-## DID Format
+## Smart Contracts (V2)
 
-```
-did:agent:{platform}:{unique_id}
-did:agent:tokli:agt_a1B2c3D4e5
-```
+Three contracts on Base L2:
 
-See [spec/did-format.md](spec/did-format.md) for full specification.
+### AgentRegistry
+- `register(pubKeyHash, owner, nonce)` — Register via relayer
+- `registerBatch(pubKeyHashes[], owners[], nonces[])` — Batch register (30-50% gas savings)
+- `revoke(agentAddr)` — Revoke (owner only)
+- `rotateKey(agentAddr, newPubKeyHash)` — Rotate key (owner only)
+- `getAgent(agentAddr)` / `isActive(agentAddr)` — Query
 
-## Smart Contract
+### AgentWalletFactory
+- `computeAddress(owner, nonce)` — Deterministic CREATE2 address (instant DID)
+- `deploy(owner, nonce)` — Lazy deploy wallet (permissionless)
 
-A single `AgentRegistry` contract on Base L2 stores identity proofs:
-
-- `register(didHash, pubKeyHash, platform)` — Register an agent
-- `revoke(didHash)` — Revoke an agent
-- `rotateKey(didHash, newPubKeyHash)` — Rotate public key
-- `getAgent(didHash)` — Query agent record
-- `isActive(didHash)` — Check if agent is active
-
-Only hashes are stored on-chain (~181 bytes per agent). Full data lives off-chain.
+### AgentWallet
+- Minimal wallet behind `BeaconProxy` (upgradeable via beacon)
+- Receives ETH/ERC-20/ERC-721/ERC-1155
+- `execute()` / `executeBatch()` — Arbitrary calls (owner or signer)
+- ERC-4337 integration deferred to future beacon upgrade
 
 ### Build & Test
 
@@ -50,22 +68,33 @@ Only hashes are stored on-chain (~181 bytes per agent). Full data lives off-chai
 cd contracts
 forge install
 forge build
-forge test
+forge test -vv   # 52 tests
 ```
 
-### Deploy to Base L2
+### Deploy
 
 ```bash
-DEPLOYER_PRIVATE_KEY=0x... forge script script/Deploy.s.sol --rpc-url https://mainnet.base.org --broadcast
+cd contracts
+DEPLOYER_PRIVATE_KEY=0x... RELAYER_ADDRESS=0x... \
+  forge script script/Deploy.s.sol --rpc-url https://sepolia.base.org --broadcast
 ```
+
+## Signing
+
+Two domains with domain separation (prevents cross-domain replay):
+
+- **HTTP API:** `oaid-http/v1\n{METHOD}\n{URL}\n{BODY_HASH}\n{TIMESTAMP}\n{NONCE}`
+- **P2P Messages:** `oaid-msg/v1\n{TYPE}\n{ID}\n{FROM}\n{TO}\n{REF}\n{TS}\n{EXP}\n{HASH}`
+
+See [spec/signing.md](spec/signing.md) for full specification.
 
 ## SDKs
 
-| Language | Package | Repository |
-|----------|---------|------------|
-| Python | `pip install agent-id` | [agent-id-python](https://github.com/open-agent-id/agent-id-python) |
-| JavaScript | `npm install @open-agent-id/sdk` | [agent-id-js](https://github.com/open-agent-id/agent-id-js) |
-| Rust | `cargo add agent-id` | [agent-id-rust](https://github.com/open-agent-id/agent-id-rust) |
+| Language | Package | Version |
+|----------|---------|---------|
+| Python | `pip install open-agent-id` | 0.2.0 |
+| JavaScript | `npm install @openagentid/sdk` | 0.2.0 |
+| Rust | `cargo add open-agent-id` | 0.2.0 |
 
 ## License
 
