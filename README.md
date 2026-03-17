@@ -97,7 +97,7 @@ See [spec/signing.md](spec/signing.md) for full specification.
 | Language | Package | Version |
 |----------|---------|---------|
 | Python | `pip install open-agent-id` | 0.2.0 |
-| JavaScript | `npm install @openagentid/sdk` | 0.2.0 |
+| JavaScript | `npm install @open-agent-id/sdk` | 0.2.0 |
 | Rust | `cargo add open-agent-id` | 0.2.0 |
 
 ## License
