@@ -15,6 +15,12 @@
 - `WALLET_BYTECODE_HASH`: `0x95e3574b9d6b6868dfb3cb3e07fd8dd4f992f0e35795f6a2eb725bba75834dce`
 - Relayer/Admin: `0x8f48fc00f061f13b95bd803dd862b8676f7219cc`
 
+## Pending Deployment
+
+| Contract | Network | Status | Notes |
+|----------|---------|--------|-------|
+| TrustPayment | Base Sepolia | Pending | Collects USDC payments for agent verification ($10) and reports ($1). Requires USDC token address and admin address at deploy time. |
+
 ## V1 (Deprecated)
 
 | Network | Chain ID | Address | Tx Hash |
