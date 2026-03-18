@@ -15,11 +15,19 @@
 - `WALLET_BYTECODE_HASH`: `0x95e3574b9d6b6868dfb3cb3e07fd8dd4f992f0e35795f6a2eb725bba75834dce`
 - Relayer/Admin: `0x8f48fc00f061f13b95bd803dd862b8676f7219cc`
 
-## Pending Deployment
+## TrustPayment (USDC Fees)
 
-| Contract | Network | Status | Notes |
-|----------|---------|--------|-------|
-| TrustPayment | Base Sepolia | Pending | Collects USDC payments for agent verification ($10) and reports ($1). Requires USDC token address and admin address at deploy time. |
+**Network:** Base Sepolia | **Deployed:** 2026-03-18
+
+| Contract | Address | Tx Hash |
+|----------|---------|---------|
+| TrustPayment | `0xb68008668baa229f7790a1eb84c8b6592f19fb9a` | `0x79fbb0e9860e8e9a257da9c20c12321735e3e63821658232cb5ea5b93a147517` |
+
+**Config:**
+- USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (Circle test USDC on Base Sepolia)
+- Admin: `0x8f48fc00f061f13b95bd803dd862b8676f7219cc`
+- Verification fee: 10 USDC ($10)
+- Report fee: 1 USDC ($1)
 
 ## V1 (Deprecated)
 
