@@ -116,6 +116,20 @@ contract TrustPaymentTest is Test {
         assertEq(usdc.balanceOf(address(payment)), 0);
     }
 
+    function test_withdraw_toZeroAddress_reverts() public {
+        // Fund the contract
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+        payment.payVerification(AGENT_DID);
+        vm.stopPrank();
+
+        // Admin tries to withdraw to zero address
+        vm.startPrank(admin);
+        vm.expectRevert(TrustPayment.ZeroAddress.selector);
+        payment.withdraw(address(0), 10 * 1e6);
+        vm.stopPrank();
+    }
+
     function test_withdraw_byNonAdmin_reverts() public {
         // First, fund the contract
         vm.startPrank(payer);

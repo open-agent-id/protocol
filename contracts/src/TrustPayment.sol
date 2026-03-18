@@ -28,9 +28,9 @@ contract TrustPayment {
 
     event Withdrawn(address indexed to, uint256 amount);
 
-    error InsufficientPayment(uint256 required, uint256 provided);
     error TransferFailed();
     error NotAdmin();
+    error ZeroAddress();
 
     constructor(address _usdc, address _admin) {
         usdc = IERC20(_usdc);
@@ -61,8 +61,11 @@ contract TrustPayment {
     /// @param amount The amount to withdraw
     function withdraw(address to, uint256 amount) external {
         if (msg.sender != admin) revert NotAdmin();
+        if (to == address(0)) revert ZeroAddress();
+        uint256 balBefore = usdc.balanceOf(to);
         bool ok = usdc.transfer(to, amount);
         if (!ok) revert TransferFailed();
+        if (usdc.balanceOf(to) < balBefore + amount) revert TransferFailed();
         emit Withdrawn(to, amount);
     }
 
