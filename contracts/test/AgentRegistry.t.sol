@@ -365,6 +365,29 @@ contract AgentRegistryTest is Test {
         registry.transferAdmin(address(0));
     }
 
+    function test_register_zeroAddress_owner_reverts() public {
+        vm.prank(relayer);
+        vm.expectRevert(AgentRegistry.ZeroAddress.selector);
+        registry.register(pubKeyHash1, address(0), 0);
+    }
+
+    function test_registerBatch_exceeds_max_batch_size_reverts() public {
+        uint256 size = 101;
+        bytes32[] memory hashes = new bytes32[](size);
+        address[] memory owners = new address[](size);
+        uint256[] memory nonces = new uint256[](size);
+
+        for (uint256 i = 0; i < size; i++) {
+            hashes[i] = keccak256(abi.encodePacked("key_", i));
+            owners[i] = address(uint160(i + 1));
+            nonces[i] = 0;
+        }
+
+        vm.prank(relayer);
+        vm.expectRevert(AgentRegistry.BatchTooLarge.selector);
+        registry.registerBatch(hashes, owners, nonces);
+    }
+
     // ── CREATE2 Address Determinism ───────────────────────────────────
 
     function test_address_determinism() public view {

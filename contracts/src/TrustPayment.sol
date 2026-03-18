@@ -28,9 +28,13 @@ contract TrustPayment {
 
     event Withdrawn(address indexed to, uint256 amount);
 
+    event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
+
     error TransferFailed();
     error NotAdmin();
     error ZeroAddress();
+    error EmptyDid();
+    error ZeroAmount();
 
     constructor(address _usdc, address _admin) {
         usdc = IERC20(_usdc);
@@ -40,6 +44,7 @@ contract TrustPayment {
     /// @notice Pay $10 USDC to verify an agent
     /// @param agentDid The DID of the agent to verify
     function payVerification(string calldata agentDid) external {
+        if (bytes(agentDid).length == 0) revert EmptyDid();
         bool ok = usdc.transferFrom(msg.sender, address(this), VERIFICATION_FEE);
         if (!ok) revert TransferFailed();
 
@@ -62,10 +67,11 @@ contract TrustPayment {
     function withdraw(address to, uint256 amount) external {
         if (msg.sender != admin) revert NotAdmin();
         if (to == address(0)) revert ZeroAddress();
-        uint256 balBefore = usdc.balanceOf(to);
+        if (amount == 0) revert ZeroAmount();
+        uint256 balBefore = usdc.balanceOf(address(this));
         bool ok = usdc.transfer(to, amount);
         if (!ok) revert TransferFailed();
-        if (usdc.balanceOf(to) < balBefore + amount) revert TransferFailed();
+        if (usdc.balanceOf(address(this)) != balBefore - amount) revert TransferFailed();
         emit Withdrawn(to, amount);
     }
 
@@ -73,6 +79,8 @@ contract TrustPayment {
     /// @param newAdmin The new admin address
     function setAdmin(address newAdmin) external {
         if (msg.sender != admin) revert NotAdmin();
+        if (newAdmin == address(0)) revert ZeroAddress();
+        emit AdminTransferred(admin, newAdmin);
         admin = newAdmin;
     }
 }

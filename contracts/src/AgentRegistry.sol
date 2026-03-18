@@ -64,6 +64,9 @@ contract AgentRegistry {
     error InvalidHash();
     error LengthMismatch();
     error ZeroAddress();
+    error BatchTooLarge();
+
+    uint256 public constant MAX_BATCH_SIZE = 100;
 
     // ── Modifiers ─────────────────────────────────────────────────────
     modifier onlyRelayer() {
@@ -95,6 +98,7 @@ contract AgentRegistry {
     /// @param nonce The agent nonce (from wallet_nonces table)
     function register(bytes32 pubKeyHash, address owner, uint256 nonce) external onlyRelayer {
         if (pubKeyHash == bytes32(0)) revert InvalidHash();
+        if (owner == address(0)) revert ZeroAddress();
 
         address agentAddr = factory.computeAddress(owner, nonce);
         if (agents[agentAddr].status != Status.None) revert AgentAlreadyExists();
@@ -126,9 +130,11 @@ contract AgentRegistry {
     ) external onlyRelayer {
         uint256 len = pubKeyHashes.length;
         if (len != owners.length || len != nonces.length) revert LengthMismatch();
+        if (len > MAX_BATCH_SIZE) revert BatchTooLarge();
 
         for (uint256 i = 0; i < len; i++) {
             if (pubKeyHashes[i] == bytes32(0)) continue; // skip invalid
+            if (owners[i] == address(0)) continue; // skip zero-address owner
 
             address agentAddr = factory.computeAddress(owners[i], nonces[i]);
 

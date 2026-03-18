@@ -160,4 +160,30 @@ contract TrustPaymentTest is Test {
         vm.expectRevert(TrustPayment.NotAdmin.selector);
         payment.setAdmin(nonAdmin);
     }
+
+    function test_setAdmin_zeroAddress_reverts() public {
+        vm.prank(admin);
+        vm.expectRevert(TrustPayment.ZeroAddress.selector);
+        payment.setAdmin(address(0));
+    }
+
+    function test_withdraw_zeroAmount_reverts() public {
+        // Fund the contract
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+        payment.payVerification(AGENT_DID);
+        vm.stopPrank();
+
+        vm.prank(admin);
+        vm.expectRevert(TrustPayment.ZeroAmount.selector);
+        payment.withdraw(makeAddr("recipient"), 0);
+    }
+
+    function test_payVerification_emptyDid_reverts() public {
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+        vm.expectRevert(TrustPayment.EmptyDid.selector);
+        payment.payVerification("");
+        vm.stopPrank();
+    }
 }

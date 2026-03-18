@@ -57,10 +57,10 @@ contract AgentWalletFactoryTest is Test {
     }
 
     function test_deploy_duplicate_reverts() public {
-        factory.deploy(owner1, 0);
+        address deployed = factory.deploy(owner1, 0);
 
-        // CREATE2 with same salt should revert
-        vm.expectRevert();
+        // CREATE2 with same salt should revert with specific error
+        vm.expectRevert(abi.encodeWithSelector(AgentWalletFactory.WalletAlreadyDeployed.selector, deployed));
         factory.deploy(owner1, 0);
     }
 

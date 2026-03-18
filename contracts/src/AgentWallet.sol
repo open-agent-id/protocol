@@ -84,13 +84,15 @@ contract AgentWallet is Initializable, IERC721Receiver, IERC1155Receiver {
         address[] calldata targets,
         uint256[] calldata values,
         bytes[] calldata calldatas
-    ) external onlyOwnerOrSigner {
+    ) external onlyOwnerOrSigner returns (bytes[] memory results) {
         if (targets.length != values.length || targets.length != calldatas.length) {
             revert LengthMismatch();
         }
+        results = new bytes[](targets.length);
         for (uint256 i = 0; i < targets.length; i++) {
             (bool success, bytes memory result) = targets[i].call{value: values[i]}(calldatas[i]);
             if (!success) revert ExecutionFailed(result);
+            results[i] = result;
             emit Executed(targets[i], values[i], calldatas[i]);
         }
     }
