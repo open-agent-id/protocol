@@ -96,9 +96,19 @@ See [spec/signing.md](spec/signing.md) for full specification.
 
 | Language | Package | Version |
 |----------|---------|---------|
-| Python | `pip install open-agent-id` | 0.2.0 |
-| JavaScript | `npm install @open-agent-id/sdk` | 0.2.0 |
-| Rust | `cargo add open-agent-id` | 0.2.0 |
+| Python | `pip install open-agent-id` | 0.2.1 |
+| JavaScript | `npm install @open-agent-id/sdk` | 0.2.1 |
+| Rust | `cargo add open-agent-id` | 0.2.1 |
+
+## MCP Server
+
+For AI agents (Claude, GPT, etc.), install the MCP server for secure credential handling:
+
+```bash
+cargo install oaid-mcp-server
+```
+
+See [oaid-mcp-server](https://github.com/open-agent-id/oaid-mcp-server) for setup instructions.
 
 ## License
 
