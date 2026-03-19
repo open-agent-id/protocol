@@ -115,15 +115,11 @@ paths:
 
     get:
       operationId: listAgents
-      summary: List agents by owner wallet
-      description: Public endpoint with cursor pagination and rate limiting.
+      summary: List agents owned by the authenticated wallet
+      description: |
+        Returns agents belonging to the authenticated wallet.
+        Requires wallet auth (Bearer token). Cursor-based pagination.
       parameters:
-        - name: owner
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Owner wallet address (0x...)
         - name: cursor
           in: query
           schema:
@@ -151,6 +147,10 @@ paths:
                   next_cursor:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - walletAuth: []
 
   /agents/{did}:
     get:
