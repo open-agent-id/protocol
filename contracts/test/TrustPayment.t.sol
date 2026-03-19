@@ -186,4 +186,20 @@ contract TrustPaymentTest is Test {
         payment.payVerification("");
         vm.stopPrank();
     }
+
+    function test_payReport_emptyReportedDid_reverts() public {
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.REPORT_FEE());
+        vm.expectRevert(TrustPayment.EmptyDid.selector);
+        payment.payReport("", REPORTER_DID);
+        vm.stopPrank();
+    }
+
+    function test_payReport_emptyReporterDid_reverts() public {
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.REPORT_FEE());
+        vm.expectRevert(TrustPayment.EmptyDid.selector);
+        payment.payReport(AGENT_DID, "");
+        vm.stopPrank();
+    }
 }

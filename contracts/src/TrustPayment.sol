@@ -55,6 +55,8 @@ contract TrustPayment {
     /// @param reportedDid The DID of the agent being reported
     /// @param reporterDid The DID of the reporting agent
     function payReport(string calldata reportedDid, string calldata reporterDid) external {
+        if (bytes(reportedDid).length == 0) revert EmptyDid();
+        if (bytes(reporterDid).length == 0) revert EmptyDid();
         bool ok = usdc.transferFrom(msg.sender, address(this), REPORT_FEE);
         if (!ok) revert TransferFailed();
 

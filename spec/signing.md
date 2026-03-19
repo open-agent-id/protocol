@@ -46,7 +46,7 @@ oaid-http/v1\n{METHOD}\n{CANONICAL_URL}\n{BODY_HASH}\n{TIMESTAMP}\n{NONCE}
 ### Example
 
 ```
-oaid-http/v1\nPOST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f809
+oaid-http/v1\nPOST\nhttps://api.example.com/v1/tasks\n0dfd9a0e52fe94a5e6311a6ef4643304c65636ae7fc316a0334e91c9665370af\n1708123456\nb4f2c3d5e6a7f8091a2b3c4d5e6f7a8b
 ```
 
 ### HTTP Headers
@@ -56,7 +56,7 @@ Signed requests MUST include these headers:
 ```
 X-Agent-DID: did:oaid:base:0x7f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e
 X-Agent-Timestamp: 1708123456
-X-Agent-Nonce: b4f2c3d5e6a7f809
+X-Agent-Nonce: b4f2c3d5e6a7f8091a2b3c4d5e6f7a8b
 X-Agent-Signature: <base64url_signature>
 ```
 
@@ -123,6 +123,6 @@ When computing `BODY_HASH` over JSON payloads, the canonical form is:
 
 ## Key Encoding
 
-- **Public key**: Base64url, no padding (44 characters)
-- **Private key**: Base64url, no padding (88 characters, includes public key)
+- **Public key**: Base64url, no padding (43 characters for 32 bytes)
+- **Private key**: Base64url, no padding (86 characters for 64 bytes, includes public key suffix)
 - **Multibase** (for DID Document): `z` prefix + Base58btc encoded
