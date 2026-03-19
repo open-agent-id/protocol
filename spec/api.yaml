@@ -380,6 +380,139 @@ paths:
       security:
         - agentSignature: []
 
+  /credit/{did}:
+    get:
+      operationId: getCredit
+      summary: Get an agent's credit score
+      description: Public endpoint. Returns credit score and report info.
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Credit info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /credit/verify:
+    post:
+      operationId: verifyCreditAgent
+      summary: Verify an agent's credit standing
+      description: Wallet auth required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [did]
+              properties:
+                did:
+                  type: string
+      responses:
+        '200':
+          description: Credit verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - walletAuth: []
+
+  /credit/report:
+    post:
+      operationId: reportAgent
+      summary: Report an agent for misconduct
+      description: Agent signature auth required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [did, reason]
+              properties:
+                did:
+                  type: string
+                  description: DID of the agent being reported
+                reason:
+                  type: string
+                  description: Reason for the report
+      responses:
+        '201':
+          description: Report submitted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - agentSignature: []
+
+  /credit/appeal:
+    post:
+      operationId: appealReport
+      summary: Appeal a credit report
+      description: Wallet auth required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [did, report_id, reason]
+              properties:
+                did:
+                  type: string
+                report_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Appeal submitted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - walletAuth: []
+
+  /pricing:
+    get:
+      operationId: getPricing
+      summary: Get current pricing information
+      description: Public endpoint. Returns pricing tiers and fees.
+      responses:
+        '200':
+          description: Pricing info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tiers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        price:
+                          type: number
+                        features:
+                          type: array
+                          items:
+                            type: string
+
   /verify:
     post:
       operationId: verifySignature
@@ -479,6 +612,28 @@ components:
           type: string
           format: date-time
         updated_at:
+          type: string
+          format: date-time
+
+    CreditInfo:
+      type: object
+      properties:
+        did:
+          type: string
+        credit_score:
+          type: integer
+        level:
+          type: string
+          description: Credit level (e.g. "standard", "good", "excellent")
+        verified:
+          type: boolean
+        flagged:
+          type: boolean
+        active_reports:
+          type: integer
+        lifetime_reports:
+          type: integer
+        registered_at:
           type: string
           format: date-time
 
