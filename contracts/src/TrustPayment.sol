@@ -9,6 +9,7 @@ contract TrustPayment {
 
     uint256 public constant VERIFICATION_FEE = 10 * 1e6; // $10 USDC (6 decimals)
     uint256 public constant REPORT_FEE = 1 * 1e6; // $1 USDC (6 decimals)
+    uint256 public referralCommission = 1 * 1e6; // $1 USDC default
 
     event VerificationPaid(
         string indexed agentDidHash, // keccak256 of DID string for indexing
@@ -26,6 +27,8 @@ contract TrustPayment {
         uint256 amount
     );
 
+    event ReferralPaid(string agentDid, address indexed referrer, uint256 amount);
+
     event Withdrawn(address indexed to, uint256 amount);
 
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
@@ -35,6 +38,8 @@ contract TrustPayment {
     error ZeroAddress();
     error EmptyDid();
     error ZeroAmount();
+    error SelfReferral();
+    error InsufficientBalance();
 
     constructor(address _usdc, address _admin) {
         usdc = IERC20(_usdc);
@@ -49,6 +54,33 @@ contract TrustPayment {
         if (!ok) revert TransferFailed();
 
         emit VerificationPaid(agentDid, agentDid, msg.sender, VERIFICATION_FEE);
+    }
+
+    /// @notice Pay $10 USDC to verify an agent, with optional referral commission
+    /// @param agentDid The DID of the agent to verify
+    /// @param referrer The address that referred this verification (or address(0) for none)
+    function payVerificationWithReferral(string calldata agentDid, address referrer) external {
+        if (bytes(agentDid).length == 0) revert EmptyDid();
+        if (referrer == msg.sender) revert SelfReferral();
+
+        bool ok = usdc.transferFrom(msg.sender, address(this), VERIFICATION_FEE);
+        if (!ok) revert TransferFailed();
+
+        emit VerificationPaid(agentDid, agentDid, msg.sender, VERIFICATION_FEE);
+
+        if (referrer != address(0) && referralCommission > 0) {
+            if (usdc.balanceOf(address(this)) < referralCommission) revert InsufficientBalance();
+            ok = usdc.transfer(referrer, referralCommission);
+            if (!ok) revert TransferFailed();
+            emit ReferralPaid(agentDid, referrer, referralCommission);
+        }
+    }
+
+    /// @notice Set the referral commission amount (admin only)
+    /// @param _amount The new referral commission in USDC (6 decimals), 0 to disable
+    function setReferralCommission(uint256 _amount) external {
+        if (msg.sender != admin) revert NotAdmin();
+        referralCommission = _amount;
     }
 
     /// @notice Pay $1 USDC to file a report against an agent

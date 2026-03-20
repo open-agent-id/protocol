@@ -22,6 +22,7 @@ contract TrustPaymentTest is Test {
     address admin = makeAddr("admin");
     address payer = makeAddr("payer");
     address nonAdmin = makeAddr("nonAdmin");
+    address referrer = makeAddr("referrer");
 
     string constant AGENT_DID = "did:oaid:base:0x1234567890abcdef";
     string constant REPORTER_DID = "did:oaid:base:0xfedcba0987654321";
@@ -201,5 +202,77 @@ contract TrustPaymentTest is Test {
         vm.expectRevert(TrustPayment.EmptyDid.selector);
         payment.payReport(AGENT_DID, "");
         vm.stopPrank();
+    }
+
+    // --- payVerificationWithReferral tests ---
+
+    function test_payVerificationWithReferral_success() public {
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+
+        vm.expectEmit(true, true, false, true);
+        emit TrustPayment.VerificationPaid(AGENT_DID, AGENT_DID, payer, 10 * 1e6);
+
+        vm.expectEmit(false, true, false, true);
+        emit TrustPayment.ReferralPaid(AGENT_DID, referrer, 1 * 1e6);
+
+        payment.payVerificationWithReferral(AGENT_DID, referrer);
+        vm.stopPrank();
+
+        // User pays $10, contract keeps $9, referrer gets $1
+        assertEq(usdc.balanceOf(payer), 990 * 1e6);
+        assertEq(usdc.balanceOf(address(payment)), 9 * 1e6);
+        assertEq(usdc.balanceOf(referrer), 1 * 1e6);
+    }
+
+    function test_payVerificationWithReferral_zeroReferrer() public {
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+
+        payment.payVerificationWithReferral(AGENT_DID, address(0));
+        vm.stopPrank();
+
+        // Behaves like normal payVerification - contract keeps full $10
+        assertEq(usdc.balanceOf(payer), 990 * 1e6);
+        assertEq(usdc.balanceOf(address(payment)), 10 * 1e6);
+    }
+
+    function test_payVerificationWithReferral_selfReferral_reverts() public {
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+        vm.expectRevert(TrustPayment.SelfReferral.selector);
+        payment.payVerificationWithReferral(AGENT_DID, payer);
+        vm.stopPrank();
+    }
+
+    // --- setReferralCommission tests ---
+
+    function test_setReferralCommission_byAdmin() public {
+        vm.prank(admin);
+        payment.setReferralCommission(2 * 1e6);
+
+        assertEq(payment.referralCommission(), 2 * 1e6);
+    }
+
+    function test_setReferralCommission_byNonAdmin_reverts() public {
+        vm.prank(nonAdmin);
+        vm.expectRevert(TrustPayment.NotAdmin.selector);
+        payment.setReferralCommission(2 * 1e6);
+    }
+
+    function test_setReferralCommission_disableReferral() public {
+        // Disable referral commission
+        vm.prank(admin);
+        payment.setReferralCommission(0);
+
+        // Pay with referrer - should not transfer any referral
+        vm.startPrank(payer);
+        usdc.approve(address(payment), payment.VERIFICATION_FEE());
+        payment.payVerificationWithReferral(AGENT_DID, referrer);
+        vm.stopPrank();
+
+        // Contract keeps all $10, referrer gets nothing
+        assertEq(usdc.balanceOf(address(payment)), 10 * 1e6);
+        assertEq(usdc.balanceOf(referrer), 0);
     }
 }
