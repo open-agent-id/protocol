@@ -70,9 +70,14 @@ contract TrustPayment {
 
         if (referrer != address(0) && referralCommission > 0) {
             if (usdc.balanceOf(address(this)) < referralCommission) revert InsufficientBalance();
-            ok = usdc.transfer(referrer, referralCommission);
-            if (!ok) revert TransferFailed();
-            emit ReferralPaid(agentDid, referrer, referralCommission);
+            // Try to pay referrer; skip if transfer fails (e.g., blocklisted address)
+            (bool success, ) = address(usdc).call(
+                abi.encodeWithSelector(usdc.transfer.selector, referrer, referralCommission)
+            );
+            if (success) {
+                emit ReferralPaid(agentDid, referrer, referralCommission);
+            }
+            // If transfer fails, verification still succeeds — referral is best-effort
         }
     }
 
@@ -80,6 +85,7 @@ contract TrustPayment {
     /// @param _amount The new referral commission in USDC (6 decimals), 0 to disable
     function setReferralCommission(uint256 _amount) external {
         if (msg.sender != admin) revert NotAdmin();
+        require(_amount <= VERIFICATION_FEE, "Commission exceeds fee");
         referralCommission = _amount;
     }
 
