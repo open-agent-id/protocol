@@ -6,9 +6,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract TrustPayment {
     IERC20 public immutable usdc;
     address public admin;
+    address public pendingAdmin;
 
     uint256 public constant VERIFICATION_FEE = 10 * 1e6; // $10 USDC (6 decimals)
     uint256 public constant REPORT_FEE = 1 * 1e6; // $1 USDC (6 decimals)
+    uint256 public constant MAX_REFERRAL_COMMISSION = 5 * 1e6; // $5 max (50% of fee)
     uint256 public referralCommission = 1 * 1e6; // $1 USDC default
 
     event VerificationPaid(
@@ -28,20 +30,27 @@ contract TrustPayment {
     );
 
     event ReferralPaid(string agentDid, address indexed referrer, uint256 amount);
+    event ReferralFailed(string agentDid, address indexed referrer, uint256 amount);
 
     event Withdrawn(address indexed to, uint256 amount);
 
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
+    event AdminTransferStarted(address indexed currentAdmin, address indexed newAdmin);
+    event ReferralCommissionUpdated(uint256 oldAmount, uint256 newAmount);
 
     error TransferFailed();
     error NotAdmin();
+    error NotPendingAdmin();
     error ZeroAddress();
     error EmptyDid();
     error ZeroAmount();
     error SelfReferral();
     error InsufficientBalance();
+    error CommissionTooHigh();
 
     constructor(address _usdc, address _admin) {
+        if (_usdc == address(0)) revert ZeroAddress();
+        if (_admin == address(0)) revert ZeroAddress();
         usdc = IERC20(_usdc);
         admin = _admin;
     }
@@ -70,14 +79,17 @@ contract TrustPayment {
 
         if (referrer != address(0) && referralCommission > 0) {
             if (usdc.balanceOf(address(this)) < referralCommission) revert InsufficientBalance();
-            // Try to pay referrer; skip if transfer fails (e.g., blocklisted address)
-            (bool success, ) = address(usdc).call(
+            // Pay referrer with proper return value decoding
+            (bool success, bytes memory ret) = address(usdc).call(
                 abi.encodeWithSelector(usdc.transfer.selector, referrer, referralCommission)
             );
-            if (success) {
+            bool transferred = success && (ret.length == 0 || abi.decode(ret, (bool)));
+            if (transferred) {
                 emit ReferralPaid(agentDid, referrer, referralCommission);
+            } else {
+                emit ReferralFailed(agentDid, referrer, referralCommission);
             }
-            // If transfer fails, verification still succeeds — referral is best-effort
+            // Verification still succeeds — referral is best-effort
         }
     }
 
@@ -85,8 +97,10 @@ contract TrustPayment {
     /// @param _amount The new referral commission in USDC (6 decimals), 0 to disable
     function setReferralCommission(uint256 _amount) external {
         if (msg.sender != admin) revert NotAdmin();
-        require(_amount <= VERIFICATION_FEE, "Commission exceeds fee");
+        if (_amount > MAX_REFERRAL_COMMISSION) revert CommissionTooHigh();
+        uint256 oldAmount = referralCommission;
         referralCommission = _amount;
+        emit ReferralCommissionUpdated(oldAmount, _amount);
     }
 
     /// @notice Pay $1 USDC to file a report against an agent
@@ -115,12 +129,23 @@ contract TrustPayment {
         emit Withdrawn(to, amount);
     }
 
-    /// @notice Transfer admin role to a new address
-    /// @param newAdmin The new admin address
-    function setAdmin(address newAdmin) external {
+    /// @notice Start two-step admin transfer. New admin must call acceptAdmin().
+    /// @param newAdmin The proposed new admin address
+    function transferAdmin(address newAdmin) external {
         if (msg.sender != admin) revert NotAdmin();
         if (newAdmin == address(0)) revert ZeroAddress();
-        emit AdminTransferred(admin, newAdmin);
-        admin = newAdmin;
+        pendingAdmin = newAdmin;
+        emit AdminTransferStarted(admin, newAdmin);
     }
+
+    /// @notice Accept admin transfer. Must be called by the pending admin.
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotPendingAdmin();
+        address oldAdmin = admin;
+        admin = msg.sender;
+        pendingAdmin = address(0);
+        emit AdminTransferred(oldAdmin, msg.sender);
+    }
+
+    // setAdmin removed — use transferAdmin() + acceptAdmin() for safe two-step transfer
 }

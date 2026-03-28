@@ -3,6 +3,11 @@ pragma solidity ^0.8.24;
 
 import {IAgentWalletFactory} from "./interfaces/IAgentWalletFactory.sol";
 
+/// @dev Minimal interface to read the current owner from a deployed AgentWallet.
+interface IAgentWallet {
+    function owner() external view returns (address);
+}
+
 /// @title AgentRegistry V2 — Wallet-native on-chain registry for AI Agent identities
 /// @notice Stores agent address → record mappings. Agent addresses are deterministically
 ///         derived via CREATE2 (factory.computeAddress). Registry server batches registrations
@@ -36,6 +41,12 @@ contract AgentRegistry {
     /// @notice Admin that can update the relayer. Set to deployer initially.
     address public admin;
 
+    /// @notice Pending admin for two-step transfer.
+    address public pendingAdmin;
+
+    /// @notice Whether the registry is paused.
+    bool public paused;
+
     /// @notice Agent address → on-chain record.
     mapping(address => AgentRecord) public agents;
 
@@ -53,6 +64,9 @@ contract AgentRegistry {
     );
     event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
+    event AdminTransferStarted(address indexed currentAdmin, address indexed newAdmin);
+    event Paused(address indexed account);
+    event Unpaused(address indexed account);
 
     // ── Errors ────────────────────────────────────────────────────────
     error AgentAlreadyExists();
@@ -61,10 +75,13 @@ contract AgentRegistry {
     error NotOwner();
     error NotRelayer();
     error NotAdmin();
+    error NotPendingAdmin();
     error InvalidHash();
+    error SameHash();
     error LengthMismatch();
     error ZeroAddress();
     error BatchTooLarge();
+    error RegistryPaused();
 
     uint256 public constant MAX_BATCH_SIZE = 100;
 
@@ -79,14 +96,24 @@ contract AgentRegistry {
         _;
     }
 
+    modifier whenNotPaused() {
+        if (paused) revert RegistryPaused();
+        _;
+    }
+
     // ── Constructor ───────────────────────────────────────────────────
 
     /// @param _factory The AgentWalletFactory address (for computeAddress verification)
     /// @param _relayer The initial relayer (registry server's hot wallet)
     constructor(address _factory, address _relayer) {
+        if (_factory == address(0)) revert ZeroAddress();
+        if (_factory.code.length == 0) revert ZeroAddress();
+        if (_relayer == address(0)) revert ZeroAddress();
         factory = IAgentWalletFactory(_factory);
         relayer = _relayer;
         admin = msg.sender;
+        emit RelayerUpdated(address(0), _relayer);
+        emit AdminTransferred(address(0), msg.sender);
     }
 
     // ── Registration (Relayer only) ───────────────────────────────────
@@ -96,7 +123,11 @@ contract AgentRegistry {
     /// @param pubKeyHash keccak256 of the Ed25519 public key
     /// @param owner The owner wallet
     /// @param nonce The agent nonce (from wallet_nonces table)
-    function register(bytes32 pubKeyHash, address owner, uint256 nonce) external onlyRelayer {
+    function register(bytes32 pubKeyHash, address owner, uint256 nonce)
+        external
+        onlyRelayer
+        whenNotPaused
+    {
         if (pubKeyHash == bytes32(0)) revert InvalidHash();
         if (owner == address(0)) revert ZeroAddress();
 
@@ -127,7 +158,7 @@ contract AgentRegistry {
         bytes32[] calldata pubKeyHashes,
         address[] calldata owners,
         uint256[] calldata nonces
-    ) external onlyRelayer {
+    ) external onlyRelayer whenNotPaused {
         uint256 len = pubKeyHashes.length;
         if (len != owners.length || len != nonces.length) revert LengthMismatch();
         if (len > MAX_BATCH_SIZE) revert BatchTooLarge();
@@ -161,13 +192,15 @@ contract AgentRegistry {
 
     // ── Owner Operations ──────────────────────────────────────────────
 
-    /// @notice Revoke an agent. Only the owner can call.
+    /// @notice Revoke an agent. Only the current owner can call.
+    ///         If the wallet is deployed, the on-chain wallet owner is authoritative
+    ///         (handles ownership transfer). Otherwise falls back to the stored owner.
     /// @param agentAddr The agent's CREATE2 address
     function revoke(address agentAddr) external {
         AgentRecord storage agent = agents[agentAddr];
         if (agent.status == Status.None) revert AgentNotFound();
         if (agent.status == Status.Revoked) revert AgentNotActive();
-        if (agent.owner != msg.sender) revert NotOwner();
+        if (_getOwner(agentAddr, agent.owner) != msg.sender) revert NotOwner();
 
         agent.status = Status.Revoked;
         agent.updatedAt = uint64(block.timestamp);
@@ -175,7 +208,7 @@ contract AgentRegistry {
         emit AgentRevoked(agentAddr);
     }
 
-    /// @notice Rotate an agent's Ed25519 public key. Only the owner can call.
+    /// @notice Rotate an agent's Ed25519 public key. Only the current owner can call.
     /// @param agentAddr The agent's CREATE2 address
     /// @param newPubKeyHash keccak256 of the new Ed25519 public key
     function rotateKey(address agentAddr, bytes32 newPubKeyHash) external {
@@ -184,13 +217,30 @@ contract AgentRegistry {
         AgentRecord storage agent = agents[agentAddr];
         if (agent.status == Status.None) revert AgentNotFound();
         if (agent.status == Status.Revoked) revert AgentNotActive();
-        if (agent.owner != msg.sender) revert NotOwner();
+        if (_getOwner(agentAddr, agent.owner) != msg.sender) revert NotOwner();
 
         bytes32 oldPubKeyHash = agent.pubKeyHash;
+        if (newPubKeyHash == oldPubKeyHash) revert SameHash();
         agent.pubKeyHash = newPubKeyHash;
         agent.updatedAt = uint64(block.timestamp);
 
         emit KeyRotated(agentAddr, oldPubKeyHash, newPubKeyHash);
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────
+
+    /// @dev Returns the authoritative owner for an agent address.
+    ///      If the wallet is deployed on-chain, reads the live owner() from the wallet
+    ///      (handles ownership transfers). If the call fails on a deployed wallet,
+    ///      reverts rather than falling back to stale data (fail-closed).
+    ///      If the wallet is not yet deployed, falls back to the stored owner.
+    function _getOwner(address agentAddr, address storedOwner) internal view returns (address) {
+        if (agentAddr.code.length > 0) {
+            // Wallet is deployed — on-chain owner is authoritative. Revert on failure
+            // rather than falling back to stale stored owner (fail-closed).
+            return IAgentWallet(agentAddr).owner();
+        }
+        return storedOwner;
     }
 
     // ── Queries ───────────────────────────────────────────────────────
@@ -217,11 +267,31 @@ contract AgentRegistry {
         emit RelayerUpdated(old, newRelayer);
     }
 
-    /// @notice Transfer admin role.
+    /// @notice Start two-step admin transfer. New admin must call acceptAdmin().
     function transferAdmin(address newAdmin) external onlyAdmin {
         if (newAdmin == address(0)) revert ZeroAddress();
+        pendingAdmin = newAdmin;
+        emit AdminTransferStarted(admin, newAdmin);
+    }
+
+    /// @notice Accept admin transfer. Must be called by the pending admin.
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotPendingAdmin();
         address old = admin;
-        admin = newAdmin;
-        emit AdminTransferred(old, newAdmin);
+        admin = msg.sender;
+        pendingAdmin = address(0);
+        emit AdminTransferred(old, msg.sender);
+    }
+
+    /// @notice Pause the registry. Blocks new registrations.
+    function pause() external onlyAdmin {
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /// @notice Unpause the registry.
+    function unpause() external onlyAdmin {
+        paused = false;
+        emit Unpaused(msg.sender);
     }
 }

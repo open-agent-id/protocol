@@ -20,8 +20,11 @@ contract AgentWalletFactory is IAgentWalletFactory {
 
     // ── Errors ────────────────────────────────────────────────────────
     error WalletAlreadyDeployed(address wallet);
+    error ZeroAddress();
 
     constructor(address _beacon) {
+        if (_beacon == address(0)) revert ZeroAddress();
+        if (_beacon.code.length == 0) revert ZeroAddress();
         beacon = _beacon;
         WALLET_BYTECODE_HASH = keccak256(_walletBytecode());
     }
@@ -57,7 +60,7 @@ contract AgentWalletFactory is IAgentWalletFactory {
     // ── Internal ──────────────────────────────────────────────────────
 
     function _salt(address owner, uint256 nonce) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(owner, nonce));
+        return keccak256(abi.encode(owner, nonce));
     }
 
     function _walletBytecode() internal view returns (bytes memory) {

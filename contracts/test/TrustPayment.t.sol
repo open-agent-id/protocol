@@ -145,27 +145,47 @@ contract TrustPaymentTest is Test {
         vm.stopPrank();
     }
 
-    // --- setAdmin tests ---
+    // --- transferAdmin / acceptAdmin tests ---
 
-    function test_setAdmin_byAdmin() public {
+    function test_transferAdmin_twoStep() public {
         address newAdmin = makeAddr("newAdmin");
 
+        // Step 1: Start transfer
         vm.prank(admin);
-        payment.setAdmin(newAdmin);
+        payment.transferAdmin(newAdmin);
+
+        // Admin is still the old admin
+        assertEq(payment.admin(), admin);
+        assertEq(payment.pendingAdmin(), newAdmin);
+
+        // Step 2: Accept
+        vm.prank(newAdmin);
+        payment.acceptAdmin();
 
         assertEq(payment.admin(), newAdmin);
+        assertEq(payment.pendingAdmin(), address(0));
     }
 
-    function test_setAdmin_byNonAdmin_reverts() public {
+    function test_transferAdmin_byNonAdmin_reverts() public {
         vm.prank(nonAdmin);
         vm.expectRevert(TrustPayment.NotAdmin.selector);
-        payment.setAdmin(nonAdmin);
+        payment.transferAdmin(nonAdmin);
     }
 
-    function test_setAdmin_zeroAddress_reverts() public {
+    function test_transferAdmin_zeroAddress_reverts() public {
         vm.prank(admin);
         vm.expectRevert(TrustPayment.ZeroAddress.selector);
-        payment.setAdmin(address(0));
+        payment.transferAdmin(address(0));
+    }
+
+    function test_acceptAdmin_byNonPending_reverts() public {
+        address newAdmin = makeAddr("newAdmin");
+        vm.prank(admin);
+        payment.transferAdmin(newAdmin);
+
+        vm.prank(nonAdmin);
+        vm.expectRevert(TrustPayment.NotPendingAdmin.selector);
+        payment.acceptAdmin();
     }
 
     function test_withdraw_zeroAmount_reverts() public {

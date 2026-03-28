@@ -342,11 +342,21 @@ contract AgentRegistryTest is Test {
     function test_transferAdmin() public {
         address newAdmin = address(0xAD);
 
+        // Step 1: Start transfer
         vm.expectEmit(true, true, false, true);
-        emit AgentRegistry.AdminTransferred(deployer, newAdmin);
+        emit AgentRegistry.AdminTransferStarted(deployer, newAdmin);
         registry.transferAdmin(newAdmin);
 
-        // Old admin should be rejected
+        // Old admin should still work until accepted
+        registry.setRelayer(address(0xBEEF));
+
+        // Step 2: Accept as new admin
+        vm.prank(newAdmin);
+        vm.expectEmit(true, true, false, true);
+        emit AgentRegistry.AdminTransferred(deployer, newAdmin);
+        registry.acceptAdmin();
+
+        // Old admin should be rejected now
         vm.expectRevert(AgentRegistry.NotAdmin.selector);
         registry.setRelayer(address(0xCAFE));
 
@@ -402,5 +412,99 @@ contract AgentRegistryTest is Test {
         // Different owner → different address
         address addr4 = factory.computeAddress(owner2, 0);
         assertTrue(addr1 != addr4);
+    }
+
+    // ── Ownership Sync Tests (Registry ↔ Wallet) ─────────────────────
+
+    function test_revoke_follows_wallet_owner_after_transfer() public {
+        // Register agent for owner1
+        vm.prank(relayer);
+        registry.register(pubKeyHash1, owner1, 0);
+        address agentAddr = factory.computeAddress(owner1, 0);
+
+        // Deploy the wallet
+        factory.deploy(owner1, 0);
+
+        // Transfer wallet ownership from owner1 → owner2
+        vm.prank(owner1);
+        AgentWallet(payable(agentAddr)).transferOwnership(owner2);
+        vm.prank(owner2);
+        AgentWallet(payable(agentAddr)).acceptOwnership();
+
+        // Old owner should no longer be able to revoke
+        vm.prank(owner1);
+        vm.expectRevert(AgentRegistry.NotOwner.selector);
+        registry.revoke(agentAddr);
+
+        // New owner should be able to revoke
+        vm.prank(owner2);
+        registry.revoke(agentAddr);
+    }
+
+    function test_rotateKey_follows_wallet_owner_after_transfer() public {
+        // Register agent for owner1
+        vm.prank(relayer);
+        registry.register(pubKeyHash1, owner1, 0);
+        address agentAddr = factory.computeAddress(owner1, 0);
+
+        // Deploy the wallet
+        factory.deploy(owner1, 0);
+
+        // Transfer wallet ownership from owner1 → owner2
+        vm.prank(owner1);
+        AgentWallet(payable(agentAddr)).transferOwnership(owner2);
+        vm.prank(owner2);
+        AgentWallet(payable(agentAddr)).acceptOwnership();
+
+        // Old owner cannot rotate key
+        vm.prank(owner1);
+        vm.expectRevert(AgentRegistry.NotOwner.selector);
+        registry.rotateKey(agentAddr, pubKeyHash2);
+
+        // New owner can rotate key
+        vm.prank(owner2);
+        registry.rotateKey(agentAddr, pubKeyHash2);
+    }
+
+    function test_revoke_uses_stored_owner_when_wallet_not_deployed() public {
+        // Register agent but do NOT deploy wallet
+        vm.prank(relayer);
+        registry.register(pubKeyHash1, owner1, 0);
+        address agentAddr = factory.computeAddress(owner1, 0);
+
+        // Wallet not deployed — stored owner is authoritative
+        vm.prank(owner1);
+        registry.revoke(agentAddr);
+    }
+
+    // ── Pause Tests ──────────────────────────────────────────────────
+
+    function test_register_reverts_when_paused() public {
+        // Pause the registry
+        registry.pause();
+
+        vm.prank(relayer);
+        vm.expectRevert(AgentRegistry.RegistryPaused.selector);
+        registry.register(pubKeyHash1, owner1, 0);
+
+        // Unpause and register should work
+        registry.unpause();
+        vm.prank(relayer);
+        registry.register(pubKeyHash1, owner1, 0);
+    }
+
+    function test_registerBatch_reverts_when_paused() public {
+        registry.pause();
+
+        bytes32[] memory hashes = new bytes32[](1);
+        address[] memory owners = new address[](1);
+        uint256[] memory nonces = new uint256[](1);
+        hashes[0] = pubKeyHash1;
+        owners[0] = owner1;
+        nonces[0] = 0;
+
+        vm.prank(relayer);
+        vm.expectRevert(AgentRegistry.RegistryPaused.selector);
+        registry.registerBatch(hashes, owners, nonces);
     }
 }

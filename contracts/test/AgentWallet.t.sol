@@ -19,6 +19,24 @@ contract Counter {
     }
 }
 
+/// @dev Malicious contract that attempts reentrancy
+contract ReentrantAttacker {
+    AgentWallet public target;
+    bool public attacked;
+
+    constructor(AgentWallet _target) {
+        target = _target;
+    }
+
+    receive() external payable {
+        if (!attacked) {
+            attacked = true;
+            // Try to re-enter execute()
+            target.execute(address(this), 0, "");
+        }
+    }
+}
+
 contract AgentWalletTest is Test {
     AgentWalletFactory public factory;
     UpgradeableBeacon public beaconContract;
@@ -168,6 +186,106 @@ contract AgentWalletTest is Test {
         assertTrue(wallet.supportsInterface(0x01ffc9a7));
         // Random interface
         assertFalse(wallet.supportsInterface(0xdeadbeef));
+    }
+
+    // ── Pause ────────────────────────────────────────────────────────
+
+    function test_pause_blocks_execute() public {
+        vm.prank(owner1);
+        wallet.pause();
+
+        vm.prank(owner1);
+        vm.expectRevert(AgentWallet.WalletPaused.selector);
+        wallet.execute(address(counter), 0, abi.encodeCall(Counter.increment, ()));
+
+        // Unpause and it works again
+        vm.prank(owner1);
+        wallet.unpause();
+
+        vm.prank(owner1);
+        wallet.execute(address(counter), 0, abi.encodeCall(Counter.increment, ()));
+        assertEq(counter.count(), 1);
+    }
+
+    function test_pause_blocks_executeBatch() public {
+        vm.prank(owner1);
+        wallet.pause();
+
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        targets[0] = address(counter);
+        calldatas[0] = abi.encodeCall(Counter.increment, ());
+
+        vm.prank(owner1);
+        vm.expectRevert(AgentWallet.WalletPaused.selector);
+        wallet.executeBatch(targets, values, calldatas);
+    }
+
+    // ── Reentrancy Guard ────────────────────────────────────────────
+
+    function test_reentrancy_blocked() public {
+        ReentrantAttacker attacker = new ReentrantAttacker(wallet);
+
+        // Fund wallet with ETH
+        vm.deal(address(wallet), 1 ether);
+
+        // Owner sends ETH to attacker, which tries to re-enter.
+        // The inner call reverts with ReentrancyGuardReentrantCall,
+        // which is wrapped by the outer execute as ExecutionFailed.
+        vm.prank(owner1);
+        vm.expectRevert(); // ExecutionFailed wrapping the reentrancy revert
+        wallet.execute(address(attacker), 0.1 ether, "");
+
+        // Verify the reentrancy was actually blocked (attacker never completed)
+        assertFalse(attacker.attacked());
+    }
+
+    // ── Ownership Transfer ──────────────────────────────────────────
+
+    function test_transferOwnership_twoStep() public {
+        address newOwner = address(0x99);
+
+        vm.prank(owner1);
+        wallet.transferOwnership(newOwner);
+
+        // Owner is still owner1 until accepted
+        assertEq(wallet.owner(), owner1);
+        assertEq(wallet.pendingOwner(), newOwner);
+
+        // Accept ownership
+        vm.prank(newOwner);
+        wallet.acceptOwnership();
+
+        assertEq(wallet.owner(), newOwner);
+        assertEq(wallet.pendingOwner(), address(0));
+    }
+
+    function test_ownership_transfer_clears_signer() public {
+        address newOwner = address(0x99);
+
+        // Set signer first
+        vm.prank(owner1);
+        wallet.setSigner(signerAddr);
+        assertEq(wallet.signer(), signerAddr);
+
+        // Transfer ownership
+        vm.prank(owner1);
+        wallet.transferOwnership(newOwner);
+        vm.prank(newOwner);
+        wallet.acceptOwnership();
+
+        // Signer should be cleared
+        assertEq(wallet.signer(), address(0));
+    }
+
+    function test_acceptOwnership_by_non_pending_reverts() public {
+        vm.prank(owner1);
+        wallet.transferOwnership(address(0x99));
+
+        vm.prank(address(0xBB));
+        vm.expectRevert(AgentWallet.NotPendingOwner.selector);
+        wallet.acceptOwnership();
     }
 
     // ── Beacon Upgrade ────────────────────────────────────────────────
